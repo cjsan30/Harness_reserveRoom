@@ -32,7 +32,7 @@ See [shell contract](../docs/shell_commands.md) for environment boundaries, runt
 
 This repository currently has no active target project profile or configured application commands.
 Commands below use the installed target-root/harness layout. The make commands are examples, not this repository's build commands.
-For the complete implemented script inventory, see `../docs/feature_inventory.md`; for readiness, see `../docs/current_state.md`.
+For the complete implemented script inventory and implementation boundaries, see `../docs/feature_inventory.md`.
 From this checkout, `pwsh -NoProfile -File scripts/init_project_adapter.ps1 -ListPresets` lists supported presets without configuring a target.
 
 User-facing workflow steps and command usage are summarized in `harness/docs/user_actions_and_commands.md`. Keep both files updated when adding, removing, or changing commands.

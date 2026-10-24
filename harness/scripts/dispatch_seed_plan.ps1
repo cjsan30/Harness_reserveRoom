@@ -9,6 +9,8 @@ param(
     [int]$StaleAfterSeconds = 7200,
     [switch]$StopOnWorkerFailure,
     [switch]$SkipAutoAdvanceGit,
+    # Keep merged assignment worktrees and local branches instead of removing them.
+    [switch]$KeepMergedAssignmentBranches,
     [string]$PlanFile
 )
 
@@ -647,6 +649,98 @@ function Merge-FeatureBranchIntoDev {
     return $devContext.WorktreePath
 }
 
+# True when an earlier run already promoted this assignment: the workflow state has
+# an authorized dev promotion for the branch and that source head is in dev.
+function Test-SeedAssignmentPromoted {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FeatureBranch
+    )
+
+    $statePath = Get-GitWorkflowResolvedPath -RootDir $rootDir -Name "state_file"
+    if (-not (Test-Path -LiteralPath $statePath)) {
+        return $false
+    }
+
+    $state = [IO.File]::ReadAllText($statePath) | ConvertFrom-Json
+    foreach ($promotion in @($state.promotions)) {
+        if ($null -eq $promotion -or [string]$promotion.status -ne "authorized") { continue }
+        if ([string]$promotion.source_branch -cne $FeatureBranch -or [string]$promotion.target_branch -cne $gitConfig.DevBranch) { continue }
+        $contained = Invoke-HarnessProcess -Executable "git" -Arguments @("-C", $rootDir, "merge-base", "--is-ancestor", [string]$promotion.source_head, $gitConfig.DevBranch) -AllowFailure
+        if ($contained.Success) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+# Removes the assignment worktree and local branch once the branch is contained in
+# dev. Never forces a dirty worktree away; returns a note for the summary instead.
+function Remove-MergedSeedAssignmentBranch {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Owner,
+        [Parameter(Mandatory = $true)]
+        [string]$AssignmentId,
+        [Parameter(Mandatory = $true)]
+        [string]$FeatureBranch
+    )
+
+    $featureHead = Get-GitBranchCommit -RootDir $rootDir -BranchName $FeatureBranch
+    if ([string]::IsNullOrWhiteSpace($featureHead)) {
+        return "branch already removed"
+    }
+
+    $contained = Invoke-HarnessProcess -Executable "git" -Arguments @("-C", $rootDir, "merge-base", "--is-ancestor", $featureHead, $gitConfig.DevBranch) -AllowFailure
+    if (-not $contained.Success) {
+        return "kept: branch is not contained in $($gitConfig.DevBranch)"
+    }
+
+    $worktreePath = Get-GitAssignmentWorktreePath -RootDir $rootDir -Owner $Owner -AssignmentId $AssignmentId
+    if (Test-Path -LiteralPath $worktreePath) {
+        $removed = Invoke-HarnessProcess -Executable "git" -Arguments @("-C", $rootDir, "worktree", "remove", $worktreePath) -AllowFailure
+        if (-not $removed.Success) {
+            return "kept: worktree could not be removed cleanly ($worktreePath)"
+        }
+    }
+
+    # Ancestry was checked above; -D only skips git's "merged into current HEAD" check,
+    # because the main checkout's HEAD is usually not dev.
+    $deleted = Invoke-HarnessProcess -Executable "git" -Arguments @("-C", $rootDir, "branch", "-D", $FeatureBranch) -AllowFailure
+    if (-not $deleted.Success) {
+        return "kept branch: $($deleted.Output)"
+    }
+
+    return "removed worktree and branch"
+}
+
+# Promote a passing assignment into dev right away so the next serial assignment,
+# which starts from dev, sees this work.
+function Invoke-SeedAssignmentPromotion {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Owner,
+        [Parameter(Mandatory = $true)]
+        [string]$AssignmentId,
+        [Parameter(Mandatory = $true)]
+        [string]$FeatureBranch
+    )
+
+    Merge-FeatureBranchIntoDev -Owner $Owner -AssignmentId $AssignmentId -FeatureBranch $FeatureBranch | Out-Null
+    $cleanup = "kept by -KeepMergedAssignmentBranches"
+    if (-not $KeepMergedAssignmentBranches) {
+        $cleanup = Remove-MergedSeedAssignmentBranch -Owner $Owner -AssignmentId $AssignmentId -FeatureBranch $FeatureBranch
+    }
+
+    $promotionQueue.Add([pscustomobject]@{
+        Owner = $Owner
+        AssignmentId = $AssignmentId
+        FeatureBranch = $FeatureBranch
+        Cleanup = $cleanup
+    }) | Out-Null
+}
+
 function Prepare-MainApprovalCandidate {
     param(
         [Parameter(Mandatory = $true)]
@@ -842,12 +936,9 @@ try {
                 Assignment = $relativeDonePath
                 Packet = "none"
             }) | Out-Null
-            if ($InvokeCodex -and -not $DryRun -and -not $PreflightOnly -and -not $SkipAutoAdvanceGit) {
-                $promotionQueue.Add([pscustomobject]@{
-                    Owner = $definition.Owner
-                    AssignmentId = $passedAssignmentId
-                    FeatureBranch = $passedFeatureBranch
-                }) | Out-Null
+            if ($InvokeCodex -and -not $DryRun -and -not $PreflightOnly -and -not $SkipAutoAdvanceGit -and -not (Test-SeedAssignmentPromoted -FeatureBranch $passedFeatureBranch)) {
+                $gitAdvanceStatus = "promoting"
+                Invoke-SeedAssignmentPromotion -Owner $definition.Owner -AssignmentId $passedAssignmentId -FeatureBranch $passedFeatureBranch
             }
             continue
         }
@@ -1103,11 +1194,16 @@ Read the listed docs first. Then claim assignment $assignmentId, work only in $w
                     $action = "created_and_invoked"
                 }
                 if (-not $DryRun -and -not $PreflightOnly -and -not $SkipAutoAdvanceGit) {
-                    $promotionQueue.Add([pscustomobject]@{
-                        Owner = $definition.Owner
-                        AssignmentId = $assignmentId
-                        FeatureBranch = $featureBranch
-                    }) | Out-Null
+                    # A failed promotion stops the plan: later assignments would start
+                    # from a dev that lacks this work.
+                    $gitAdvanceStatus = "promoting"
+                    try {
+                        Invoke-SeedAssignmentPromotion -Owner $definition.Owner -AssignmentId $assignmentId -FeatureBranch $featureBranch
+                    } catch {
+                        $gitAdvanceStatus = "fail"
+                        $gitAdvanceFailure = $_.Exception.Message
+                        throw ("promotion into dev failed for " + $assignmentId + ": " + $gitAdvanceFailure)
+                    }
                 }
             } else {
                 if ($action -eq "reused") {
@@ -1155,10 +1251,7 @@ Read the listed docs first. Then claim assignment $assignmentId, work only in $w
 
     if ($InvokeCodex -and -not $DryRun -and -not $PreflightOnly -and -not $SkipAutoAdvanceGit -and $overallStatus -eq "pass") {
         try {
-            foreach ($promotionItem in $promotionQueue) {
-                Merge-FeatureBranchIntoDev -Owner $promotionItem.Owner -AssignmentId $promotionItem.AssignmentId -FeatureBranch $promotionItem.FeatureBranch | Out-Null
-            }
-
+            # Each passing assignment was already promoted into dev as it finished.
             $approvalCandidate = Prepare-MainApprovalCandidate -PlanId $planId
             $gitAdvanceStatus = "approval_requested"
         } catch {
@@ -1228,6 +1321,10 @@ Read the listed docs first. Then claim assignment $assignmentId, work only in $w
 - test_branch: $(if ($null -eq $approvalCandidate) { "none" } else { $approvalCandidate.TestBranch })
 - approval_id: $(if ($null -eq $approvalCandidate -or [string]::IsNullOrWhiteSpace($approvalCandidate.ApprovalId)) { "none" } else { $approvalCandidate.ApprovalId })
 - test_worktree: $(if ($null -eq $approvalCandidate) { "none" } else { $approvalCandidate.TestWorktreePath })
+
+## Dev Promotions
+
+$(if ($promotionQueue.Count -eq 0) { "- none" } else { ($promotionQueue | ForEach-Object { "- $($_.AssignmentId) ($($_.FeatureBranch)): promoted; cleanup: $($_.Cleanup)" }) -join [Environment]::NewLine })
 
 ## Results
 

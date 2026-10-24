@@ -63,4 +63,4 @@ Provider 계약이 있는 worker의 성공 종료에는 유효한 정규화 결�
 - 로컬 파일을 쓰는 주체가 증거와 소스를 모두 위조하는 공격에 대한 보안 경계는 아닙니다.
 - 검증은 재실행됩니다. 외부 발송·결제 같은 side effect 없이 반복 가능한 테스트를 설정하세요. 모든 로그의 secret 마스킹과 자동 보존 기간은 미구현입니다.
 - 상태 폴더 이동·worktree 삭제·로그 제거·소스/HEAD/index 변경 후에는 이전 증거가 유효하지 않을 수 있습니다. 저장소 이동은 기존 승인 재발급 정책에도 해당합니다.
-- 로컬 테스트는 fake worker와 Git fixture입니다. 실제 AI, 원격 merge, WSL/Linux 결과를 뜻하지 않습니다. [검증 기록](archive/verification_evidence_2026-10-15.md)을 참고하세요.
+- 로컬 테스트는 fake worker와 Git fixture입니다. 실제 AI, 원격 merge, WSL/Linux 결과를 뜻하지 않습니다. 검증 기록을 참고하세요.

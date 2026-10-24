@@ -12,10 +12,7 @@
     "source_docs": [
       "AGENT.md",
       "docs/requirements.md",
-      "docs/requirements_raw_links.md",
-      "docs/env_manifest.md",
-      "docs/subagent_plan.md",
-      "docs/subagent_first_prompts.md"
+      "docs/env_manifest.md"
     ],
     "success_criteria": [
       "All API behavior in docs/requirements.md is implemented with automated tests",
@@ -119,10 +116,7 @@
       "read": [
         "AGENT.md",
         "docs/requirements.md",
-        "docs/requirements_raw_links.md",
         "docs/env_manifest.md",
-        "docs/subagent_plan.md",
-        "docs/subagent_first_prompts.md",
         "harness/AGENT.md",
         "harness/project/prompts/manager_main.md",
         "harness/project/prompts/manager_main_seed.md",
@@ -140,10 +134,7 @@
       "read": [
         "AGENT.md",
         "docs/requirements.md",
-        "docs/requirements_raw_links.md",
         "docs/env_manifest.md",
-        "docs/subagent_plan.md",
-        "docs/subagent_first_prompts.md",
         "harness/AGENT.md",
         "harness/project/prompts/manager_harness.md",
         "harness/configs/git_policy.md",

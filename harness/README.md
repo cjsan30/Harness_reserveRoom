@@ -6,8 +6,7 @@ AI 코딩 작업의 배정, 검증, 실패 복구, Git 통합을 관리하는 Po
 작업·worker·증거·사용량·승인 요청을 표시합니다. 서버는 Python 3.9+가 필요하며,
 `dashboard -Snapshot -Json`은 PowerShell만으로 조회합니다. [현황판 사용법과 지표](docs/dashboard.md).
 
-작업을 이어갈 때는 [현재 상태와 다음 작업](docs/current_state.md)을 먼저 읽으세요. AI 코딩 도구용 작업 규칙은 [CLAUDE.md](CLAUDE.md)에 있습니다.
-과거 대화·결정·검증 기록은 [docs/archive/](docs/archive/)에 보관합니다.
+AI 코딩 도구용 작업 규칙은 [CLAUDE.md](CLAUDE.md)에 있습니다. 세션 인계 문서와 과거 검증 기록은 로컬 전용(`local_notes/`, 저장소 미포함)으로 관리합니다.
 
 ## 범위
 
@@ -19,7 +18,7 @@ AI 코딩 작업의 배정, 검증, 실패 복구, Git 통합을 관리하는 Po
 - 격리된 임시 저장소를 사용하는 Harness smoke 테스트
 
 전체 기능과 각 구현 파일은 [기능 목록](docs/feature_inventory.md)에 있습니다.
-알려진 제한과 개선 과제는 [현재 상태](docs/current_state.md)에 있습니다.
+알려진 제한과 개선 과제는 현재 상태에 있습니다.
 
 ## 구조
 
@@ -44,7 +43,7 @@ AI 코딩 작업의 배정, 검증, 실패 복구, Git 통합을 관리하는 Po
 기존 문서의 `harness/scripts/...` 명령은 대상 저장소 아래에 `harness/`를 배치한 구조를 기준으로 합니다.
 핵심 PowerShell 및 개별 검증·cycle·retry shell은 독립·이식 배치를 지원합니다. [Shell 명령 계약](docs/shell_commands.md)에서 프로필 기반 실행, preview, 잘못된 인자·경로·재귀 거부와 전환 방법을 확인하세요. 플랫폼 제한은 [배치 지원](docs/layout_support.md)에 있습니다.
 
-Windows PowerShell 5.1/7·CMD·Git Bash와 WSL2 Ubuntu의 native PowerShell/Bash 추가 검증은 [플랫폼별 결과](docs/archive/verification_platforms_2026-10-15.md)에 있습니다. 실제 환경·파일시스템·실행별 통과 수를 구분합니다.
+Windows PowerShell 5.1/7·CMD·Git Bash와 WSL2 Ubuntu의 native PowerShell/Bash 추가 검증은 플랫폼별 결과에 있습니다. 실제 환경·파일시스템·실행별 통과 수를 구분합니다.
 
 ## 개발 시 확인
 
@@ -71,7 +70,7 @@ Windows PowerShell 5.1에서는 필요 시 현재 프로세스에만 적용되�
 
 세 번째 묶음은 독립·이식 경로 통일, worktree hook, Codex CLI 옵션 갱신과 실행별 사용량/다음 실행 제한입니다. [사용량·정책·조회 명령](docs/execution_usage.md)을 제공합니다. 실제 구독 잔여량이나 청구 금액을 추정하지 않습니다.
 
-네 번째 묶음은 [실행 증거 기반 성공 판정](docs/assignment_evidence.md)입니다. 작업 완료 시 검증 명령을 실제로 실행하고 코드·Git 상태·로그·worker 종료를 연결합니다. 증거 없는 기존 pass는 미검증으로 분류하며 `-Revalidate`로 다시 검증할 수 있습니다. [검증 기록](docs/archive/verification_evidence_2026-10-15.md)을 제공합니다.
+네 번째 묶음은 [실행 증거 기반 성공 판정](docs/assignment_evidence.md)입니다. 작업 완료 시 검증 명령을 실제로 실행하고 코드·Git 상태·로그·worker 종료를 연결합니다. 증거 없는 기존 pass는 미검증으로 분류하며 `-Revalidate`로 다시 검증할 수 있습니다. 검증 기록을 제공합니다.
 
 PowerShell에서 프리셋 목록을 확인할 수 있습니다.
 

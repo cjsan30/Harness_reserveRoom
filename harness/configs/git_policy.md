@@ -9,6 +9,7 @@ Protect commit, push, and merge operations so only a tested tree can move throug
 1. Work on a feature branch named `<owner>/<task>` (`git_workflow.feature_branch_prefix` is empty by default; `<owner>` must be listed in `owners`).
    - live harness assignment branches are created from the repository baseline branch, not from whichever branch happens to be checked out
    - commits on working branches are not gated; evidence is required when work leaves the branch (push, dev merge, main merge)
+   - harness assignment branches start from `dev` once it exists (from `main` before the first promotion). Seed runs promote each passing assignment into `dev` immediately so serial assignments build on each other
 2. Commit as often as needed. Before pushing, keep the candidate sealed: no unstaged files, no untracked files, no merge conflicts.
 3. Run the owner gate on the candidate:
    - committed head: `pwsh -NoProfile -File harness/scripts/run_git_gate.ps1 -Stage feature -AllowCommittedHead`

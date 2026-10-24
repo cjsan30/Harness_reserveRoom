@@ -263,6 +263,70 @@ exit 1
         Assert-True ($r.Output.Contains('already targets refs/heads/main')) "unexpected reason: $($r.Output)"
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $ghState 'put.json')) -and -not (Test-Path -LiteralPath (Join-Path $ghState 'post.json'))) 'a ruleset write happened'
     }
+
+    # Serial seed plans: assignments start from dev and are promoted as they pass
+    # (field findings F-10, F-11). Production functions are loaded without running
+    # dispatch's orchestration entry point.
+    $dispatchAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'dispatch_seed_plan.ps1'), [ref]$null, [ref]$null)
+    foreach ($name in @('Test-SeedAssignmentPromoted', 'Remove-MergedSeedAssignmentBranch')) {
+        $definition = $dispatchAst.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true)
+        . ([scriptblock]::Create($definition.Extent.Text))
+    }
+    $seed = New-PolicyFixture 'seed promotion [safe]' -WithSelf
+    $rootDir = $seed
+    $gitConfig = Get-GitWorkflowConfig -RootDir $seed
+    function New-SeedAssignmentBranch([string]$AssignmentId, [string]$FileName, [switch]$Merge) {
+        $branch = "agent-tests/$AssignmentId"
+        $worktree = Get-GitAssignmentWorktreePath -RootDir $seed -Owner 'agent-tests' -AssignmentId $AssignmentId
+        Invoke-FixtureGit $seed @('worktree', 'add', '-q', '-b', $branch, $worktree, 'dev') | Out-Null
+        Write-Utf8File (Join-Path $worktree $FileName) $AssignmentId
+        Invoke-FixtureGit $worktree @('add', '-f', $FileName) | Out-Null
+        Invoke-FixtureGit $worktree @('commit', '-q', '-m', $AssignmentId) | Out-Null
+        if ($Merge) {
+            Invoke-FixtureGit $seed @('checkout', '-q', 'dev') | Out-Null
+            Invoke-FixtureGit $seed @('merge', '-q', '--no-ff', '-m', "merge $AssignmentId", $branch) | Out-Null
+            Invoke-FixtureGit $seed @('checkout', '-q', 'main') | Out-Null
+        }
+        return [pscustomobject]@{ Branch = $branch; Worktree = $worktree; Head = (Invoke-FixtureGit $seed @('rev-parse', $branch)) }
+    }
+
+    Test-Case 'assignment branches start from dev once dev exists (F-10)' {
+        Assert-True ((Get-GitAssignmentBaseBranch -RootDir $seed) -eq 'dev') 'assignment base is not dev'
+        $noDev = New-PolicyFixture 'no dev yet [safe]' -WithSelf
+        Invoke-FixtureGit $noDev @('branch', '-D', 'dev') | Out-Null
+        Assert-True ((Get-GitAssignmentBaseBranch -RootDir $noDev) -eq 'main') 'baseline before the first promotion is not main'
+    }
+    Test-Case 'merged assignment worktree and branch are removed (F-11)' {
+        $item = New-SeedAssignmentBranch 'merged-task' 'merged-task.txt' -Merge
+        $note = Remove-MergedSeedAssignmentBranch -Owner 'agent-tests' -AssignmentId 'merged-task' -FeatureBranch $item.Branch
+        Assert-True ($note -eq 'removed worktree and branch') "cleanup note: $note"
+        Assert-True (-not (Test-Path -LiteralPath $item.Worktree)) 'worktree directory remained'
+        Assert-True ([string]::IsNullOrWhiteSpace((Get-GitBranchCommit -RootDir $seed -BranchName $item.Branch))) 'branch remained'
+    }
+    Test-Case 'unmerged or dirty assignment branches are kept' {
+        $open = New-SeedAssignmentBranch 'open-task' 'open-task.txt'
+        $note = Remove-MergedSeedAssignmentBranch -Owner 'agent-tests' -AssignmentId 'open-task' -FeatureBranch $open.Branch
+        Assert-True ($note.StartsWith('kept: branch is not contained')) "unmerged cleanup note: $note"
+        Assert-True (Test-Path -LiteralPath $open.Worktree) 'unmerged worktree was removed'
+        $dirty = New-SeedAssignmentBranch 'dirty-task' 'dirty-task.txt' -Merge
+        Write-Utf8File (Join-Path $dirty.Worktree 'dirty-task.txt') 'uncommitted edit'
+        $note = Remove-MergedSeedAssignmentBranch -Owner 'agent-tests' -AssignmentId 'dirty-task' -FeatureBranch $dirty.Branch
+        Assert-True ($note.StartsWith('kept: worktree could not be removed cleanly')) "dirty cleanup note: $note"
+        Assert-True (-not [string]::IsNullOrWhiteSpace((Get-GitBranchCommit -RootDir $seed -BranchName $dirty.Branch))) 'dirty branch was deleted'
+    }
+    Test-Case 'resume detects an assignment already promoted into dev' {
+        $promoted = New-SeedAssignmentBranch 'promoted-task' 'promoted-task.txt' -Merge
+        $pending = New-SeedAssignmentBranch 'pending-task' 'pending-task.txt'
+        $statePath = Get-GitWorkflowResolvedPath -RootDir $seed -Name 'state_file'
+        Ensure-HarnessDirectory (Split-Path -Parent $statePath)
+        $state = @{ version = 1; validations = @(); approvals = @(); promotions = @(
+                @{ id = 'p1'; status = 'authorized'; source_branch = $promoted.Branch; target_branch = 'dev'; source_head = $promoted.Head },
+                @{ id = 'p2'; status = 'authorized'; source_branch = $pending.Branch; target_branch = 'dev'; source_head = $pending.Head }) }
+        Write-Utf8File $statePath ($state | ConvertTo-Json -Depth 6)
+        Assert-True (Test-SeedAssignmentPromoted -FeatureBranch $promoted.Branch) 'merged promotion not detected'
+        Assert-True (-not (Test-SeedAssignmentPromoted -FeatureBranch $pending.Branch)) 'authorized but unmerged promotion treated as done'
+        Assert-True (-not (Test-SeedAssignmentPromoted -FeatureBranch 'agent-tests/never-promoted')) 'branch without a promotion treated as done'
+    }
 } finally {
     $env:CODEX_HARNESS_ROOT = $previousRoot
     $env:CODEX_GIT_WORKSPACE_ROOT = $previousWorkspace

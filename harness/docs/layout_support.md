@@ -28,8 +28,8 @@ pwsh -NoProfile -File scripts/run_harness_preflight.ps1
 
 Windows PowerShell 5.1/7에서 한글·공백·대괄호 경로의 두 배치를 검사합니다. 초기화, 실제 Git의 main/worktree hook 거부, preflight, 프로필 기반 cycle, fake worker 완료 및 JSONL 사용량, CI/환경/릴리스 생성·감사를 포함합니다. fixture의 단계 명령은 `git --version`이며 제품의 실제 동작 검증을 뜻하지 않습니다.
 
-Ubuntu CI 정의는 유지하지만 원격 실행 결과는 없습니다. 이후 Windows PS5/7·CMD·Git Bash, WSL2 Ubuntu 24.04의 native Linux 실행과 Windows→WSL→Windows hook 재설치 전환을 실제 검사했습니다. `/tmp`와 `/mnt/c`의 결과는 [플랫폼별 검증](archive/verification_platforms_2026-10-15.md)을 따릅니다. 별도 Linux 서버/다른 배포판 및 유료 AI는 범위 밖입니다. 생성 파일 감사도 GitHub Actions/Docker 실제 실행 성공과 구분합니다.
+Ubuntu CI 정의는 유지하지만 원격 실행 결과는 없습니다. 이후 Windows PS5/7·CMD·Git Bash, WSL2 Ubuntu 24.04의 native Linux 실행과 Windows→WSL→Windows hook 재설치 전환을 실제 검사했습니다. `/tmp`와 `/mnt/c`의 결과는 플랫폼별 검증을 따릅니다. 별도 Linux 서버/다른 배포판 및 유료 AI는 범위 밖입니다. 생성 파일 감사도 GitHub Actions/Docker 실제 실행 성공과 구분합니다.
 
-여덟 번째 묶음의 shell fixture는 실제 Node 숫자 합계 CLI를 만들고 두 배치의 검증·실패 중단과 프로젝트 복사 후 실행을 검사합니다. 이전 git 버전 fixture와 별도이며 [결과와 한계](archive/verification_shell_2026-10-15.md)에 기록합니다.
+여덟 번째 묶음의 shell fixture는 실제 Node 숫자 합계 CLI를 만들고 두 배치의 검증·실패 중단과 프로젝트 복사 후 실행을 검사합니다. 이전 git 버전 fixture와 별도이며 결과와 한계에 기록합니다.
 
 WSL DrvFS에서 PowerShell Copy-Item으로 읽기 전용 `.git/objects` 메타데이터를 복사할 때 권한 오류를 재현했습니다. 이동 fixture는 Git 데이터베이스를 local clone으로 복제하고 나머지 프로젝트 파일을 복사합니다. 복사 후 Git 작업에는 새 위치/OS에서 hook을 다시 설치해야 합니다.

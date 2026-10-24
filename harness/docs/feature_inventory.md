@@ -1,8 +1,8 @@
 # Harness 구현 기능 전체 목록
 
-현재 소스에 존재하는 기능을 분류한 목록입니다. **29개 기능군, PowerShell 91개와 shell 19개로 구성된 스크립트 110개**, 추가 Python 2개·브라우저 회귀 JS 1개, Git hook 템플릿 4종을 포함합니다.
+현재 소스에 존재하는 기능을 분류한 목록입니다. **29개 기능군, PowerShell 92개와 shell 19개로 구성된 스크립트 111개**, 추가 Python 2개·브라우저 회귀 JS 1개, Git hook 템플릿 4종을 포함합니다.
 
-구현 존재와 검증 완료는 다릅니다. 현재 개발 저장소에는 활성 대상 프로필이 없으며 알려진 결함은 [현재 상태](current_state.md)에 기록되어 있습니다. 생성 파일 감사는 일부 항목에서 필수 문자열 존재를 확인하는 수준입니다.
+구현 존재와 검증 완료는 다릅니다. 현재 개발 저장소에는 활성 대상 프로필이 없으며 알려진 결함은 현재 상태에 기록되어 있습니다. 생성 파일 감사는 일부 항목에서 필수 문자열 존재를 확인하는 수준입니다.
 
 ## 1. 이식 및 실행 환경
 
@@ -92,7 +92,7 @@ Markdown seed 계획을 작업으로 분해해 순차 실행합니다. 재시도
 
 | 구현 파일 | 역할 |
 | --- | --- |
-| [dispatch_seed_plan.ps1](../scripts/dispatch_seed_plan.ps1) | 계획 파싱, 배정·재시도·재개 및 선택적 Git 승격 |
+| [dispatch_seed_plan.ps1](../scripts/dispatch_seed_plan.ps1) | 계획 파싱, 배정·재시도·재개, 통과한 작업을 즉시 `dev`로 승격(다음 작업은 `dev`에서 출발), 병합된 작업 worktree·브랜치 정리 |
 | [run_seed_handoff.ps1](../scripts/run_seed_handoff.ps1) | hook 갱신·preflight·계획 실행을 한 진입점으로 연결 |
 | [get_seed_handoff_resume.ps1](../scripts/get_seed_handoff_resume.ps1) | 완료/대기/실행/실패/누락/복구 상태와 재개 명령을 Markdown·JSON으로 기록 |
 
@@ -252,6 +252,7 @@ JSON 프로필과 Markdown 상태, UTF-8 쓰기, 경로 제한, 프로세스 실
 | --- | --- |
 | [test_harness.ps1](../scripts/test_harness.ps1) | PowerShell 구문·JSON 검사와 안전성 테스트의 공통 진입점 |
 | [test_harness_safety.ps1](../scripts/test_harness_safety.ps1) | 격리 Git 저장소, fake GitHub CLI, 별도 프로세스로 승인·민감정보·잠금·원자적 저장 검증 |
+| [test_project_adapter.ps1](../scripts/test_project_adapter.ps1) | Java 프리셋 wrapper 명령·표준 경로, worker 문서 목록, 기존 ignore 파일 병합, 문서 템플릿 치환, preflight 자리표시자 경고, bootstrap 템플릿 후보 |
 | [test_git_workflow_policy.ps1](../scripts/test_git_workflow_policy.ps1) | 브랜치 이름 기본값, 자체 정책 적용 범위, gate 명령 fail-closed, 커밋 규칙, 병합된 브랜치 원격 삭제·승인된 미병합 브랜치 삭제, fake gh로 dev 보호 ruleset 생성·main 보호 유지 검증 |
 | [test_lock_child.ps1](../scripts/test_lock_child.ps1) | 강제 종료·동시 잠금 테스트 전용 자식 프로세스 |
 | [intake_safety.ps1](../scripts/intake_safety.ps1) | 민감정보 구역에서 변수 이름만 전달하고 다른 구역의 흔한 credential 패턴 차단 |
@@ -324,7 +325,7 @@ host·usage ledger·완료 증거·복구에 연결했습니다. exit 0인 명�
 | [test_harness_shell.ps1](../scripts/test_harness_shell.ps1) | 다른 격리 프로젝트의 실제 Node CLI 유닛·통합·보안 회귀 |
 | [test_harness_entrypoints.ps1](../scripts/test_harness_entrypoints.ps1) | PowerShell 직접 호출·CMD·Bash의 실제 인자/경로/preview/종료 코드/사이클 비교; Linux에서는 native PowerShell·Bash |
 
-기본 make fallback과 알 수 없는 인자 무시를 제거했습니다. [명령 계약과 전환](shell_commands.md), [실제 전후 비교](archive/verification_shell_2026-10-15.md)를 참고하세요.
+기본 make fallback과 알 수 없는 인자 무시를 제거했습니다. [명령 계약과 전환](shell_commands.md), 실제 전후 비교를 참고하세요.
 
 ## 29. 로컬 조회 현황판
 
@@ -348,5 +349,5 @@ host·usage ledger·완료 증거·복구에 연결했습니다. exit 0인 명�
 - 실제 Codex 실행, 원격 PR/ruleset, Telegram, Docker는 각각 설치·인증·환경 구성이 필요합니다.
 - build/unit/integration/benchmark의 실제 내용은 대상 프로필이 정합니다. Harness에 모든 프로젝트의 테스트가 내장된 것은 아닙니다.
 - smoke 테스트의 fake worker/API 통과는 실제 Codex 또는 GitHub 실행의 검증과 같지 않습니다.
-- 승인 범위와 intake 민감정보 복사 경로는 회귀 테스트와 함께 수정했습니다. 핵심 독립/이식 경로·shell 명령 통일 및 사용량/다음 실행 제한을 추가했습니다. Windows·WSL2 Ubuntu의 [실제 플랫폼 검증](archive/verification_platforms_2026-10-15.md)을 수행했으며 금액 예산, 실행 중 timeout, 별도 Linux 배포판·원격 CI는 남아 있습니다.
+- 승인 범위와 intake 민감정보 복사 경로는 회귀 테스트와 함께 수정했습니다. 핵심 독립/이식 경로·shell 명령 통일 및 사용량/다음 실행 제한을 추가했습니다. Windows·WSL2 Ubuntu의 실제 플랫폼 검증을 수행했으며 금액 예산, 실행 중 timeout, 별도 Linux 배포판·원격 CI는 남아 있습니다.
 - 부모 종료 후 worker lease와 실행 기록으로 중복 실행을 차단합니다. 종료가 불명확한 자식 프로세스의 강제 정리, 네트워크 파일시스템 잠금은 제공·검증 범위 밖입니다.
