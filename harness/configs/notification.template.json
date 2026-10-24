@@ -1,0 +1,19 @@
+{
+  "provider": "telegram",
+  "level": "attention",
+  "environment": {
+    "HARNESS_NOTIFY_PROVIDER": "telegram",
+    "HARNESS_NOTIFY_LEVEL": "attention",
+    "HARNESS_TELEGRAM_BOT_TOKEN": "set outside Git",
+    "HARNESS_TELEGRAM_CHAT_ID": "set outside Git"
+  },
+  "levels": {
+    "attention": "notify on user action, baseline, failure, deferred questions, secret/env, requirements, or environment/toolchain attention states",
+    "action_required": "notify only when status or failure explicitly requires user action",
+    "failure": "notify only on failed/blocked statuses",
+    "all": "notify on every status snapshot"
+  },
+  "disable": {
+    "HARNESS_NOTIFY_DISABLED": "true"
+  }
+}

@@ -1,0 +1,14 @@
+* text=auto
+*.sh text eol=lf
+githooks/* text eol=lf
+.githooks/* text eol=lf
+harness/githooks/* text eol=lf
+*.ps1 text
+*.json text
+*.md text
+*.sql text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf

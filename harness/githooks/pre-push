@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+. "$(dirname "$0")/harness-bootstrap.sh"
+
+tmp="${TMP:-/tmp}/codex_pre_push_$$.txt"
+cat > "$tmp"
+trap 'rm -f "$tmp"' EXIT
+tmp_for_ps="$(to_harness_powershell_path "$tmp" "$ps_base")"
+case "$ps_base" in
+  powershell.exe) exec "$ps_cmd" -NoProfile -ExecutionPolicy Bypass -File "$script_path" -Action push -RemoteName "$1" -RemoteUrl "$2" -RefUpdateFile "$tmp_for_ps" -RepositoryRoot "$workspace_root" ;;
+  *) exec "$ps_cmd" -NoProfile -File "$script_path" -Action push -RemoteName "$1" -RemoteUrl "$2" -RefUpdateFile "$tmp_for_ps" -RepositoryRoot "$workspace_root" ;;
+esac

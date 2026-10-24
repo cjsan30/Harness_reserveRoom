@@ -1,0 +1,288 @@
+{
+  "project": {
+    "name": "reserve-room",
+    "summary": "Study room reservation REST API: members sign up and log in (JWT), browse rooms, reserve and cancel time slots without overlapping bookings even under concurrent requests; admins manage rooms. Spring Boot 4, PostgreSQL, Flyway, Testcontainers.",
+    "language": "java",
+    "runtime": "JVM",
+    "framework": "spring-boot (gradle wrapper)",
+    "ide": "IntelliJ IDEA or VS Code",
+    "repository_root": "."
+  },
+  "requirements": {
+    "source_docs": [
+      "AGENT.md",
+      "docs/requirements.md",
+      "docs/requirements_raw_links.md",
+      "docs/env_manifest.md",
+      "docs/subagent_plan.md",
+      "docs/subagent_first_prompts.md"
+    ],
+    "success_criteria": [
+      "All API behavior in docs/requirements.md is implemented with automated tests",
+      "gradlew.bat test passes, including Testcontainers PostgreSQL integration tests",
+      "Concurrent reservations for the same room and overlapping time allow exactly one success"
+    ]
+  },
+  "worker_provider": {
+    "version": 1,
+    "name": "claude"
+  },
+  "execution_policy": {
+    "billing_mode": "subscription",
+    "max_invocations": 12,
+    "max_attempts_per_assignment": 2,
+    "max_concurrent_workers": 1,
+    "max_total_tokens": null,
+    "max_total_duration_seconds": 10800,
+    "max_invocation_seconds": 1800
+  },
+  "commands": {
+    "build": ".\\gradlew.bat build -x test",
+    "unit": ".\\gradlew.bat test",
+    "integration": ".\\gradlew.bat check",
+    "benchmark_smoke": ".\\gradlew.bat test --tests io.github.cjsan30.reserveroom.ReserveRoomApplicationTests",
+    "release": ".\\gradlew.bat bootJar",
+    "full_cycle": "pwsh -NoProfile -File harness/scripts/run_harness_cycle.ps1"
+  },
+  "owners": {
+    "agent-runtime": {
+      "read": [
+        "AGENT.md",
+        "docs/requirements.md",
+        "docs/env_manifest.md"
+      ],
+      "work_area": "src/main/resources",
+      "validation": ".\\gradlew.bat build",
+      "failure_scope": [
+        "application configuration",
+        "security configuration",
+        "startup"
+      ]
+    },
+    "agent-api": {
+      "read": [
+        "AGENT.md",
+        "docs/requirements.md",
+        "docs/env_manifest.md"
+      ],
+      "work_area": "src/main/java",
+      "validation": ".\\gradlew.bat test",
+      "failure_scope": [
+        "routes",
+        "controllers",
+        "request handling"
+      ]
+    },
+    "agent-domain": {
+      "read": [
+        "AGENT.md",
+        "docs/requirements.md",
+        "docs/env_manifest.md"
+      ],
+      "work_area": "src/main/java",
+      "validation": ".\\gradlew.bat test",
+      "failure_scope": [
+        "business rules",
+        "services",
+        "validation"
+      ]
+    },
+    "agent-data": {
+      "read": [
+        "AGENT.md",
+        "docs/requirements.md",
+        "docs/env_manifest.md"
+      ],
+      "work_area": "src/main/resources",
+      "validation": ".\\gradlew.bat test",
+      "failure_scope": [
+        "Flyway migrations",
+        "JPA mapping",
+        "database constraints"
+      ]
+    },
+    "agent-tests": {
+      "read": [
+        "AGENT.md",
+        "docs/requirements.md",
+        "docs/env_manifest.md"
+      ],
+      "work_area": "src/test",
+      "validation": ".\\gradlew.bat test",
+      "failure_scope": [
+        "unit tests",
+        "integration tests",
+        "fixtures"
+      ]
+    },
+    "manager-main": {
+      "read": [
+        "AGENT.md",
+        "docs/requirements.md",
+        "docs/requirements_raw_links.md",
+        "docs/env_manifest.md",
+        "docs/subagent_plan.md",
+        "docs/subagent_first_prompts.md",
+        "harness/AGENT.md",
+        "harness/project/prompts/manager_main.md",
+        "harness/project/prompts/manager_main_seed.md",
+        "harness/configs/git_policy.md"
+      ],
+      "work_area": "project-wide",
+      "validation": ".\\gradlew.bat build",
+      "failure_scope": [
+        "cross-module",
+        "interface reconciliation",
+        "integration ownership"
+      ]
+    },
+    "manager-harness": {
+      "read": [
+        "AGENT.md",
+        "docs/requirements.md",
+        "docs/requirements_raw_links.md",
+        "docs/env_manifest.md",
+        "docs/subagent_plan.md",
+        "docs/subagent_first_prompts.md",
+        "harness/AGENT.md",
+        "harness/project/prompts/manager_harness.md",
+        "harness/configs/git_policy.md",
+        "harness/configs/retry_dispatch_policy.md"
+      ],
+      "work_area": "harness",
+      "validation": "pwsh -NoProfile -File harness/scripts/run_harness_cycle.ps1 -SkipRetryPrompt",
+      "failure_scope": [
+        "tooling",
+        "dispatch",
+        "automation"
+      ]
+    }
+  },
+  "dispatch": {
+    "compile_owner": "manager-main",
+    "interface_owner": "manager-main",
+    "environment_owner": "manager-harness",
+    "default_failure_type": "logic",
+    "repeat_failure_escalation_owner": "manager-main"
+  },
+  "failure_patterns": {
+    "environment": [
+      "command not found",
+      "not recognized",
+      "No such file",
+      "No such file or directory",
+      "cannot find the path specified",
+      "Cannot find module",
+      "ERR_MODULE_NOT_FOUND",
+      "ModuleNotFoundError",
+      "ImportError",
+      "package not found",
+      "No module named",
+      "no make-compatible command found",
+      "Access is denied",
+      "Permission denied",
+      "UnauthorizedAccessException",
+      "EPERM",
+      "EACCES",
+      "ECONNREFUSED",
+      "ETIMEDOUT",
+      "ENOTFOUND",
+      "network timeout",
+      "Temporary failure in name resolution"
+    ],
+    "compile": [
+      "error:",
+      "undefined reference",
+      "fatal error",
+      "compilation failed",
+      "SyntaxError",
+      "TypeScript error",
+      "TS2307",
+      "TS2322",
+      "error[E",
+      "cannot find symbol",
+      "Compilation failure",
+      "CS",
+      "go build",
+      "build failed"
+    ],
+    "interface": [
+      "mismatch",
+      "incompatible",
+      "conflict",
+      "expected",
+      "actual",
+      "AssertionError",
+      "TypeError",
+      "ReferenceError",
+      "undefined method",
+      "NoMethodError",
+      "AttributeError",
+      "contract",
+      "schema validation"
+    ],
+    "secret": [
+      "missing environment variable",
+      "Missing required environment variable",
+      "API key",
+      "api_key",
+      "secret",
+      "token",
+      "DATABASE_URL",
+      "OPENAI_API_KEY",
+      "No API key",
+      "authentication required",
+      "401 Unauthorized",
+      "403 Forbidden"
+    ],
+    "requirements": [
+      "ambiguous requirement",
+      "requirements unclear",
+      "needs clarification",
+      "not specified",
+      "product decision",
+      "project_intake_questions.md",
+      "intake review"
+    ],
+    "worker": [
+      "worker_did_not_complete_assignment_marked_fail",
+      "worker did not complete",
+      "assignment was not completed",
+      "assignment failed after",
+      "previous failed assignment requires resume",
+      "active invoke lock",
+      "codex run summary"
+    ]
+  },
+  "git_workflow": {
+    "hooks_path": ".githooks",
+    "state_file": "harness/state/git_workflow/state.json",
+    "reports_dir": "harness/reports/git_workflow",
+    "bootstrap_branch": "main",
+    "main_branch": "main",
+    "dev_branch": "dev",
+    "feature_branch_prefix": "",
+    "test_branch_prefix": "test/"
+  },
+  "harness": {
+    "logs": "harness/reports/logs",
+    "latest_report": "harness/reports/latest_report.md",
+    "preflight_report": "harness/reports/preflight_report.md",
+    "status_report": "harness/reports/status.md",
+    "status_json": "harness/reports/status.json",
+    "test_results": "harness/reports/test_results",
+    "retry_prompts": "harness/reports/retry_prompts",
+    "seed_plans": "harness/reports/seed_plans",
+    "dispatch_packets": "harness/reports/dispatch_packets",
+    "agent_runs": "harness/reports/agent_runs",
+    "assignments_root": "harness/assignments",
+    "assignment_worktrees_root": "harness/state/worktrees",
+    "notification_state": "harness/state/notifications",
+    "dispatch_log": "harness/reports/dispatch_log.md",
+    "seed_dispatch_log": "harness/reports/seed_dispatch_log.md",
+    "assignment_log": "harness/reports/assignment_log.md",
+    "live_dispatch_log": "harness/reports/live_dispatch_log.md",
+    "notification_log": "harness/reports/notifications_log.md",
+    "assignment_stale_seconds": 7200
+  }
+}

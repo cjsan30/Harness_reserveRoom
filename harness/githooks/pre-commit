@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+. "$(dirname "$0")/harness-bootstrap.sh"
+
+case "$ps_base" in
+  powershell.exe) exec "$ps_cmd" -NoProfile -ExecutionPolicy Bypass -File "$script_path" -Action commit -RepositoryRoot "$workspace_root" ;;
+  *) exec "$ps_cmd" -NoProfile -File "$script_path" -Action commit -RepositoryRoot "$workspace_root" ;;
+esac

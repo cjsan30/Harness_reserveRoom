@@ -1,0 +1,6 @@
+* text=auto
+*.sh text eol=lf
+harness/githooks/* text eol=lf
+*.ps1 text
+*.json text
+*.md text

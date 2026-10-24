@@ -1,0 +1,10 @@
+/gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary
+
+# Harness (harness/configs/gitattributes.template)
+*.sh text eol=lf
+harness/githooks/* text eol=lf
+*.ps1 text
+*.json text
+*.md text

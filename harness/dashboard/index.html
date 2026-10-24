@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Harness 현황판</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body>
+<header class="topbar"><a class="brand" href="#overview">Harness <span>Monitor</span></a><span class="readonly">조회 전용 · 로컬</span></header>
+<main id="overview">
+  <div class="page-heading"><div><p class="context">프로젝트 실행 현황</p><h1 id="project-name">상태를 불러오는 중</h1><p id="project-meta" class="muted">현재 프로젝트의 기록을 확인합니다.</p></div><div class="refresh"><label><input type="checkbox" id="auto-refresh" checked> 자동 갱신</label><button id="refresh-button" type="button">새로고침</button></div></div>
+  <div id="connection" class="connection" role="status" aria-live="polite">첫 번째 상태 수집을 기다리고 있습니다.</div>
+  <section class="metrics" aria-label="실행 요약">
+    <div><span class="metric-label">증거 확인 완료 / 등록 작업</span><strong id="metric-progress">—</strong><progress id="progress" max="100" value="0" aria-label="증거 확인 완료율"></progress><small id="progress-note">계획 전체가 아닌 보존된 작업 큐 기준</small></div>
+    <div><span class="metric-label">실행 확인된 worker</span><strong id="metric-workers">—</strong><small>프로세스 ID · 시작 식별자 · host 대조</small></div>
+    <div><span class="metric-label">확인된 누적 토큰</span><strong id="metric-tokens">—</strong><small id="usage-note">미확정 사용량은 합계에서 제외</small></div>
+    <div><span class="metric-label">승인 요청</span><strong id="metric-approvals">—</strong><small>요청 기록 조회 · 승인 실행 없음</small></div>
+  </section>
+  <div class="workspace">
+    <section class="panel task-panel" aria-labelledby="tasks-heading">
+      <div class="section-heading"><h2 id="tasks-heading">작업 현황</h2><label class="filter">표시 <select id="task-filter"><option value="all">전체 작업</option><option value="attention">확인 필요</option><option value="in_progress">진행 중</option><option value="passed">완료</option><option value="queued">대기</option></select></label></div>
+      <p id="task-summary" class="muted">작업 상태를 확인하고 있습니다.</p>
+      <div id="tasks" class="tasks"></div>
+      <section id="task-detail" class="task-detail" hidden aria-labelledby="detail-title"><h3 id="detail-title">작업 상세</h3><dl id="detail-fields"></dl></section>
+    </section>
+    <aside>
+      <section class="panel" aria-labelledby="attention-heading"><h2 id="attention-heading">확인할 항목</h2><div id="attention"></div></section>
+      <section class="panel" aria-labelledby="validation-heading"><h2 id="validation-heading">최근 검증 사이클</h2><p class="muted">종료 후 기록된 결과 · 현재 실행 단계 아님</p><ol id="validation" class="steps"></ol><p id="validation-time" class="muted"></p></section>
+    </aside>
+  </div>
+  <section class="panel" aria-labelledby="usage-heading"><div class="section-heading"><h2 id="usage-heading">프로젝트 누적 사용량</h2><span class="muted">보존된 호출 전체 · 재시도 포함</span></div><div id="usage-summary" class="usage-summary"></div><details><summary>호출별 내역 · 최근 100건</summary><div class="table-scroll"><table><thead><tr><th>작업 / 호출 ID</th><th>Provider</th><th>시도</th><th>사용량 상태</th><th>입력</th><th>출력</th><th>시각</th></tr></thead><tbody id="invocations"></tbody></table></div></details></section>
+  <section class="panel" aria-labelledby="workers-heading"><h2 id="workers-heading">Worker 실행 기록</h2><div id="workers"></div></section>
+  <footer>확인된 상태를 기준으로 표시합니다. 토큰·시간 한도는 다음 실행 시작을 제한하며, 구독 잔여량과 실제 청구액은 조회하지 않습니다.</footer>
+</main>
+</body></html>

@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew *)",
+      "Bash(./gradlew.bat *)",
+      "Bash(.\\gradlew.bat *)",
+      "Bash(pwsh -NoProfile -File harness/scripts/complete_assignment.ps1 *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)"
+    ],
+    "deny": [
+      "Bash(git push*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean*)",
+      "Edit(/harness/**)",
+      "Write(/harness/**)",
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  }
+}
