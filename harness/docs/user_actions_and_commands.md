@@ -19,13 +19,13 @@ Read the [shell contract and migration guide](shell_commands.md) for exit codes,
 
 `pwsh -NoProfile -File scripts/test_harness_entrypoints.ps1` creates isolated real CLI fixtures and compares native PowerShell/Bash calls, plus CMD on Windows. It is included in the full self-test. The optional `-FixtureDirectory` is for a previous shell-test output directory, never a production project. The fixtures' commands are temporarily changed for failure tests and restored afterward.
 
-`test_harness_shell.ps1 -CasePattern '*relocated*'` reruns only the two relocation cases. Filtered pass counts are not whole-suite results. See [actual platform coverage](archive/verification_platforms_2026-10-15.md) for WSL/Linux filesystem and runtime details.
+`test_harness_shell.ps1 -CasePattern '*relocated*'` reruns only the two relocation cases. Filtered pass counts are not whole-suite results. See actual platform coverage for WSL/Linux filesystem and runtime details.
 
 ## Harness Development Checkout
 
 This checkout contains the reusable engine and no active target project profile.
 The commands below describe a configured target repository with the engine under `harness/`.
-Review [current development state](current_state.md) before running operational commands here.
+Review current development state before running operational commands here.
 The complete implemented feature and script list is in [feature_inventory.md](feature_inventory.md).
 Use `pwsh -NoProfile -File scripts/init_project_adapter.ps1 -ListPresets` from this checkout to inspect presets without creating a target configuration.
 
@@ -305,6 +305,7 @@ Preview without launching live Codex:
 
 ```powershell
 pwsh -NoProfile -File harness/scripts/run_seed_handoff.ps1 -DryRun -PlanFile harness/reports/seed_plans/<plan-file>.md
+pwsh -NoProfile -File harness/scripts/run_seed_handoff.ps1 -KeepMergedAssignmentBranches -PlanFile harness/reports/seed_plans/<plan-file>.md
 pwsh -NoProfile -File harness/scripts/run_retry_handoff.ps1 -DryRun
 ```
 

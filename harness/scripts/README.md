@@ -11,7 +11,7 @@ Tests: `test_harness_dashboard.ps1`, `test_harness_dashboard_server.py`,
 `test_harness_dashboard_browser.js` (Playwright CLI run-code).
 
 This checkout is for Harness development and has no active target project profile.
-Operational examples below assume a configured target repository. See `../docs/current_state.md` for readiness and `../docs/feature_inventory.md` for the complete script inventory.
+Operational examples below assume a configured target repository. See `../docs/feature_inventory.md` for the complete script inventory and implementation boundaries.
 
 This directory contains the operational scripts used by the harness.
 

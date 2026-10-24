@@ -64,4 +64,4 @@ pwsh -NoProfile -File scripts/test_provider_claude.ps1
 pwsh -NoProfile -File scripts/test_harness.ps1
 ```
 
-unit·integration·security 범주를 결과 JSON에 기록합니다. 자세한 최종 실행 근거는 [Claude 검증 기록](archive/verification_claude_2026-10-15.md), 공통 규칙은 [Provider 계약](provider_contract.md)을 참고하세요. 실제 유료 AI, 인증 변경, 외부 전송, 원격 CI는 이번 테스트에 포함하지 않습니다.
+unit·integration·security 범주를 결과 JSON에 기록합니다. 자세한 최종 실행 근거는 Claude 검증 기록, 공통 규칙은 [Provider 계약](provider_contract.md)을 참고하세요. 실제 유료 AI, 인증 변경, 외부 전송, 원격 CI는 이번 테스트에 포함하지 않습니다.

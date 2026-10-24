@@ -31,3 +31,7 @@ harness/state/notifications/
 harness/assignments/*/inbox/*.md
 harness/assignments/*/in_progress/*.md
 harness/assignments/*/done/*.md
+# Assignment queue lock files
+harness/assignments/*/.queue/
+# Installed git hooks (install_git_hooks.ps1 regenerates them from harness/githooks/)
+.githooks/
