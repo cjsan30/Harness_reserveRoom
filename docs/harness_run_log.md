@@ -32,6 +32,8 @@
 - 이 저장소의 `harness/`를 새 엔진으로 교체(정책 상태 `harness/state/`와 프로젝트 설정 `harness/project/`는 유지)
 - 정리: 더 이상 쓰지 않는 생성 문서 4개(`docs/subagent_plan.md`, `docs/subagent_first_prompts.md`, `docs/requirements_raw_links.md`, `docs/project_profile_generated.md`)를 Git 추적에서 빼고 로컬 전용 `local_notes/`로 이동. 프로필의 문서 목록도 정리
 
+- 교체 커밋의 feature gate(전체 하네스 사이클)가 **실패**: unit 단계에서 Testcontainers가 Docker에 연결하지 못함(`DockerClientProviderStrategy`). Docker Desktop이 WSL 관련 오류로 엔진을 시작하지 못한 상태("unable to start")였음. 사용자가 Docker Desktop을 다시 띄워 복구. 하네스는 unit 실패에서 이후 단계를 실행하지 않고 gate를 실패로 기록(fail closed) → Docker 복구 후 재실행
+
 ## 1단계: AI worker 실행
 
 (실행 후 기록)
