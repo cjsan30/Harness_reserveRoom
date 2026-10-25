@@ -18,7 +18,7 @@ Tests do not need these: Testcontainers provides PostgreSQL and test resources p
 
 ## Prepared Data
 
-- Seed admin account created by a Flyway migration: `admin@reserve-room.local`. Development-only password `admin-dev-password` (stored only as a BCrypt hash in the migration). Change or remove before any real deployment.
+- Seed admin account created by a Flyway migration: `admin@reserve-room.local`. Development-only password `admin-dev-password`. The migration stores only this precomputed BCrypt hash (Spring Security `BCrypt`, cost 10): `$2a$10$.XYFcD3EDXz7b93GEy8ZO.cc45G531jcGFCV51NoKW2QfAwIxLe1S`. Change or remove before any real deployment.
 
 ## External Dependencies
 

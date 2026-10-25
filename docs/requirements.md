@@ -30,7 +30,8 @@
 | GET | `/api/members/me` | 회원 | 내 정보 `{id, email, name, role}` |
 
 - 역할은 `USER`, `ADMIN`. 가입하면 `USER`
-- 관리자 계정은 Flyway 마이그레이션으로 1개 만든다(이메일 `admin@reserve-room.local`). 비밀번호는 BCrypt 해시로만 저장하고, 개발용 평문은 `docs/env_manifest.md`에 적는다
+- 관리자 계정은 Flyway 마이그레이션으로 1개 만든다(이메일 `admin@reserve-room.local`). 비밀번호는 아래 **미리 계산한 BCrypt 해시 값을 그대로** 넣는다. 마이그레이션에 평문 비밀번호를 쓰거나 DB 함수(`pgcrypto` 등)로 해시를 만들지 않는다
+  - 해시: `$2a$10$.XYFcD3EDXz7b93GEy8ZO.cc45G531jcGFCV51NoKW2QfAwIxLe1S` (개발 전용 비밀번호 `admin-dev-password`를 Spring Security `BCrypt`, cost 10으로 만든 값. 평문은 `docs/env_manifest.md`에만 있음)
 
 ### 2. 스터디룸
 
