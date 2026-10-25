@@ -34,6 +34,34 @@
 
 - 교체 커밋의 feature gate(전체 하네스 사이클)가 **실패**: unit 단계에서 Testcontainers가 Docker에 연결하지 못함(`DockerClientProviderStrategy`). Docker Desktop이 WSL 관련 오류로 엔진을 시작하지 못한 상태("unable to start")였음. 사용자가 Docker Desktop을 다시 띄워 복구. 하네스는 unit 실패에서 이후 단계를 실행하지 않고 gate를 실패로 기록(fail closed) → Docker 복구 후 재실행
 
+- 교체분을 `dev`에 merge할 때 "target branch worktree must be clean"으로 거부: `dev`(첫 커밋 시점)의 `.gitignore`에는 아직 `local_notes/` 규칙이 없어 로컬 전용 폴더가 미추적으로 잡힘. 로컬 전용 폴더는 브랜치와 무관하게 `.git/info/exclude`에도 등록해 해결(엔진 저장소에도 동일 적용)
+
 ## 1단계: AI worker 실행
 
-(실행 후 기록)
+### 1-1. 첫 유료 실행: 작업 1(schema-foundation)만 (2026-10-25 21:18)
+
+- 실행: `run_seed_handoff.ps1`, 작업 1만 담은 계획, `-MaxWorkerAttempts 2 -StopOnWorkerFailure -SkipAutoAdvanceGit`(이유는 아래 #3), 모델은 CLI 기본값
+- 결과: **실패**(2회 시도, 총 234초). 하네스가 두 시도 모두 provider 실패로 판정하고 계획을 중단
+
+| # | 무엇이 일어났나 | 원인 | 조치 | 구분 |
+| --- | --- | --- | --- | --- |
+| 1 | worker가 `./gradlew.bat test`, 완료 보고 명령, `python`을 모두 거부당함(권한 거부 5건) | Claude Code는 **신뢰(trust) 확인을 받지 않은 폴더**에서 `.claude/settings.json`의 허용 규칙을 무시함. 하네스는 작업마다 새 worktree 폴더에서 실행 → 허용 7건이 무시되고 `--permission-prompts none`이라 전부 자동 거부 | 저장소 루트를 Claude Code에서 한 번 신뢰 처리(사용자 작업) 후 재실행 예정 | **환경·엔진 개선점** |
+| 2 | 1차: 관리자 시드 마이그레이션에 BCrypt 해시 대신 자리표시자를 남김. 2차: 같은 worktree에서 1차 결과를 읽고 원인을 진단해 PostgreSQL `pgcrypto`의 `crypt()`로 마이그레이션 중 해시를 만들게 수정 | 해시를 만들 코드를 실행할 수 없었음(#1). 2차 수정은 평문 비밀번호가 마이그레이션에 들어가 "해시로만 저장" 요구와 어긋남 — **worker가 스스로 위험으로 보고** | 요구사항에 미리 계산한 해시를 제공하거나 생성 방법을 허용하도록 계획 보완 | 계획 |
+| 3 | 첫 실행에서 `dev` 자동 반영을 켤 수 없었음 | 새 엔진이 `dev`에만 있어 기본 작업 폴더를 `dev`로 둬야 하는데, 반영 단계는 `dev`를 별도 worktree로 열려고 함 | 측정 목적이라 `-SkipAutoAdvanceGit`로 실행 | **엔진 개선점** |
+| 4 | 하네스 사용량 기록이 두 시도 모두 `unknown` | 실패한 실행의 사용량은 0이 아니라 unknown으로 기록하는 규칙. Claude는 실패해도 실제 사용량을 보고함 | 실제 수치는 Claude 결과 이벤트에서 직접 계산(아래) | **엔진 개선점** |
+| 5 | 1차 시도의 실행 로그가 없음 | worker 로그를 시도마다 같은 파일에 덮어씀 | 2차만 수치 확보 | **엔진 개선점** |
+| 6 | 실행 후 `harness/assignments/agent-data/.transitions/*.json`이 미추적으로 남음 | 큐 전환 기록 경로가 ignore 템플릿에 없음 | 루트 `.gitignore`에 추가 | **엔진 개선점** |
+
+사용량(2차 시도, Claude 결과 이벤트 기준):
+
+| 항목 | 값 |
+| --- | --- |
+| Claude 실행 시간 / 턴 | 83.8초 / 23턴 (하네스 기준 87.5초) |
+| 입력 토큰 | 679,211 (캐시 읽기 643,727 + 캐시 생성 35,460 + 일반 24) |
+| 출력 토큰 | 6,283 (사고 2,210 포함) |
+| API 환산 비용 | $0.54 (구독이라 청구는 없고 사용 한도에서 차감) |
+| 도구 사용 | Read 13, Bash 5(전부 거부), Glob 2, Grep 1, Write 1 |
+
+1차 시도는 115초였고 수치는 남지 않았음(#5).
+
+후속 조치(2026-10-25): #2에 대해 요구사항에 미리 계산한 BCrypt 해시를 넣음(Spring Security `BCrypt`, cost 10으로 생성하고 맞는/틀린 비밀번호로 검증). #1은 사용자가 저장소 루트를 Claude Code에서 신뢰 처리. 두 시도 합계는 대략 API 환산 $1 안팎, 입력 약 130만 토큰(대부분 캐시 읽기)으로 추정.
