@@ -14,6 +14,7 @@
 - `requested_model`은 명시한 `-Model`만 기록합니다. CLI 설정에서 결정된 실제 모델은 추측하지 않고 `resolved_model: null`로 둡니다.
 - `billing_mode`는 프로필의 선언값이며 인증을 조회해 판단하지 않습니다. 실제 청구액은 `actual_cost_usd: null`입니다.
 - 이벤트 누락·잘못된 수치·깨진 JSON·실패 종료·미완료 turn은 `usage.status: unknown`, 토큰은 `null`입니다. 0으로 바꾸지 않습니다.
+- Claude 실행이 실패(권한 거부, 오류 결과 등)했어도 최종 result 이벤트가 정확히 하나이고 토큰 수가 유효하면, 그 값을 `provider_result.reported_usage`(`status: reported_on_failure`)로 따로 보존합니다. `usage`는 계속 unknown이고 성공 판정과 토큰 한도 계산에는 쓰지 않습니다. `get_execution_usage.ps1` 합계의 `reported_failure_count`·`reported_failure_tokens`로 실패 실행의 실제 소모량을 볼 수 있습니다. Codex는 아직 보존하지 않습니다.
 - 재시도도 새 invocation ID로 보존하며 같은 owner/assignment의 시도 번호를 증가시킵니다.
 - ledger에는 프롬프트·도구 출력·credential을 복사하지 않습니다. 2026-10-21부터 worker 실행 로그, git gate 로그, 검증 사이클 단계 로그, assignment 검증 증거 로그는 쓰기 전에 `Protect-HarnessSecretText`(`secret_redaction.ps1`)로 비밀값을 `[REDACTED]`로 바꿉니다. 대상은 알려진 토큰 형식(sk-, ghp_, github_pat_, glpat-, xox, AKIA, AIza, JWT), Bearer/Basic 헤더, URL 사용자 정보, 이름에 key/secret/token/password가 들어간 JSON·대입 값, 개인 키 블록, 이름이 민감해 보이는 환경 변수의 실제 값입니다. 숫자·true/false/null 값은 바꾸지 않으므로 `input_tokens` 같은 사용량 수치는 유지됩니다. 패턴 기반이라 임의 형식의 비밀값까지 보장하지는 않습니다.
 

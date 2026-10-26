@@ -207,6 +207,38 @@ $global:LASTEXITCODE=0
         }
     }
 }
+# Field finding F-15: a failed invocation keeps usage unknown, but the usage the
+# provider reported is retained separately and never counted as known usage.
+$denied='{"type":"result","subtype":"success","is_error":false,"session_id":"fixture-session","num_turns":23,"result":"blocked","terminal_reason":"completed","usage":{"input_tokens":24,"cache_read_input_tokens":643727,"cache_creation_input_tokens":35460,"output_tokens":6283},"permission_denials":[{"tool_name":"Bash","tool_input":{"command":"./gradlew test"}}]}'
+Case unit 'failed invocation keeps reported usage apart from unknown usage' {
+    $worker=Record;$r=Get-HarnessProviderResult $worker (Log $denied) 0
+    Assert-HarnessProviderResult $r $worker.provider_contract $worker.invocation_id 0
+    Assert-True ($r.execution_status -eq 'failed' -and $r.usage.status -eq 'unknown' -and $null -eq $r.usage.input_tokens) 'failed usage was not unknown'
+    Assert-True ($r.reported_usage.status -eq 'reported_on_failure' -and $r.reported_usage.input_tokens -eq 679211 -and $r.reported_usage.cached_input_tokens -eq 643727 -and $r.reported_usage.output_tokens -eq 6283) "reported usage wrong: $($r.reported_usage|ConvertTo-Json -Compress)"
+}
+Case unit 'successful or unreadable invocations carry no reported usage' {
+    $worker=Record
+    Assert-True ($null -eq (Get-HarnessProviderResult $worker (Log $valid) 0).reported_usage) 'success carried reported usage'
+    Assert-True ($null -eq (Get-HarnessProviderResult $worker (Log 'no result') 0).reported_usage) 'missing result produced reported usage'
+    $broken=$denied.Replace('"output_tokens":6283','"output_tokens":-1')
+    Assert-True ($null -eq (Get-HarnessProviderResult $worker (Log $broken) 0).reported_usage) 'invalid counts produced reported usage'
+}
+Case security 'reported usage cannot accompany known usage or bad counts' {
+    $worker=Record;$r=Get-HarnessProviderResult $worker (Log $valid) 0
+    $r|Add-Member -NotePropertyName reported_usage -NotePropertyValue ([pscustomobject]@{status='reported_on_failure';input_tokens=1;cached_input_tokens=0;output_tokens=1}) -Force
+    Reject {Assert-HarnessProviderResult $r $worker.provider_contract $worker.invocation_id 0}
+    $failed=Get-HarnessProviderResult $worker (Log $denied) 0
+    $failed.reported_usage.cached_input_tokens=999999999
+    Reject {Assert-HarnessProviderResult $failed $worker.provider_contract $worker.invocation_id 0}
+}
+Case integration 'ledger totals report failed-run tokens without changing budgets' {
+    $root=Fixture @{execution_policy=@{max_total_tokens=1000000}};$worker=Record
+    New-HarnessUsageReservation $root $worker;Complete-HarnessUsageReservation $root $worker (Log $denied) 0 1
+    $records=@(Read-HarnessUsageRecords $root);$totals=Get-HarnessUsageTotals $records
+    Assert-True ($totals.unknown_usage_count -eq 1 -and $totals.known_total_tokens -eq 0) 'failed run counted as known usage'
+    Assert-True ($totals.reported_failure_count -eq 1 -and $totals.reported_failure_tokens -eq 685494) "reported totals wrong: $($totals|ConvertTo-Json -Compress)"
+    Reject {New-HarnessUsageReservation $root (Record)}
+}
 Write-Utf8File (Join-Path $testRoot 'results.json') ($results.ToArray()|ConvertTo-Json -Depth 8)
 $failed=@($results|Where-Object{-not $_.passed}).Count
 Write-Output "Claude results: $($results.Count-$failed)/$($results.Count) passed; artifacts: $testRoot"

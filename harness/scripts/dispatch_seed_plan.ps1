@@ -741,6 +741,25 @@ function Invoke-SeedAssignmentPromotion {
     }) | Out-Null
 }
 
+# Automatic promotion merges into the worktree that has dev checked out, which may be
+# the main checkout. A dirty one would only fail after the worker spent tokens, so the
+# run checks it before any worker starts.
+function Assert-SeedDevCheckoutReady {
+    $devRecord = @(Get-GitWorktreeRecords -RootDir $rootDir | Where-Object { $_.BranchName -eq $gitConfig.DevBranch }) | Select-Object -First 1
+    if ($null -eq $devRecord) {
+        return
+    }
+
+    $devPath = [System.IO.Path]::GetFullPath($devRecord.WorktreePath)
+    $devStatus = Invoke-InWorkspace -GitWorkspaceRoot $devPath -ScriptBlock {
+        Get-GitStatusAnalysis -RootDir $rootDir
+    }
+    if ($devStatus.Lines.Count -gt 0) {
+        throw ("$($gitConfig.DevBranch) is checked out at $devPath with uncommitted or untracked changes; automatic promotion merges there. " +
+            "Commit, move, or ignore them before the run, or use -SkipAutoAdvanceGit.`n" + ($devStatus.Lines -join [Environment]::NewLine))
+    }
+}
+
 function Prepare-MainApprovalCandidate {
     param(
         [Parameter(Mandatory = $true)]
@@ -851,6 +870,15 @@ $dispatchLock = Acquire-HarnessLock -LockRoot $lockRoot -LockName ("seed_dispatc
 if ($null -eq $dispatchLock) {
     Write-Output "seed dispatch lock is already held for plan: $planId"
     exit 0
+}
+
+if ($InvokeCodex -and -not $DryRun -and -not $PreflightOnly -and -not $SkipAutoAdvanceGit) {
+    try {
+        Assert-SeedDevCheckoutReady
+    } catch {
+        Release-HarnessLock $dispatchLock
+        throw
+    }
 }
 
 $summaryFile = Join-Path $seedPlansDir ($planId + "__dispatch_summary.md")
