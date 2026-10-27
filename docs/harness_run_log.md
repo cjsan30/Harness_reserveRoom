@@ -74,4 +74,5 @@
 
 - 1-1의 #3(`dev` 자동 반영 불가)을 다시 확인해 보니 진단이 틀렸음: 하네스는 `dev`가 이미 열린 worktree(기본 작업 폴더 포함)를 그대로 재사용하므로 충돌은 없음. 진짜 위험은 그 폴더에 커밋하지 않은 변경이 있으면 **작업이 다 끝난 뒤** 반영 단계에서야 실패해 토큰이 낭비된다는 것 → 실행 시작 전에 검사해 바로 멈추도록 엔진 수정
 - 1-1의 #4(실패 실행의 사용량 unknown)에 대해, Claude가 실패해도 보고한 사용량을 `reported_usage`로 따로 보존하도록 엔진 수정(성공 판정·예산 계산은 그대로)
+- **gate가 끝나지 않는 문제 발견:** PC 재시작 후 다시 돌린 feature gate가 모든 단계(build·test·check·smoke)를 15:14에 성공했는데도 프로세스가 끝나지 않음. 원인은 Gradle wrapper가 처음 띄운 **Gradle daemon이 하네스의 출력 파이프를 물려받아** 유휴 종료(기본 3시간)까지 살아 있었던 것. `gradlew --stop`으로 daemon을 멈추자 gate가 즉시 완료되어 원인 확인. 10-25~26의 "feature gate 후 3시간 공백"도 같은 원인으로 보임(daemon이 이미 떠 있을 때는 재현되지 않아 그동안 드러나지 않음). Claude worker 안의 `./gradlew test`도 같은 이유로 멈출 수 있어 유료 실행 전에 수정 → `gradle.properties`에 `org.gradle.daemon=false`
 
