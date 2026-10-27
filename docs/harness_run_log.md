@@ -2,7 +2,7 @@
 
 이 저장소는 [Harness](https://github.com/cjsan30/Harness_) 엔진으로 AI(Claude Code) worker에게 작업을 맡겨 만드는 스터디룸 예약 API입니다. 이 문서는 실행할 때마다 무엇이 실패했고 원인이 무엇이었으며 어떻게 고쳤는지를 기록합니다.
 
-- 엔진 버전: Harness_ `dev` `dd3b8f2` (2026-10-22)를 `harness/`로 복사 → 2026-10-25 `002046d`(F-01~F-11 수정)로 교체
+- 엔진 버전: Harness_ `dev` `dd3b8f2` (2026-10-22)를 `harness/`로 복사 → 2026-10-25 `002046d`(F-01~F-11 수정) → 2026-10-27 `7651f7b`(F-13·F-15 수정)로 교체
 - 환경: Windows 10, Windows PowerShell 5.1 + PowerShell 7.6, JDK 21 (Temurin), Docker 29.9, Claude Code 2.1.310 (구독)
 
 ## 0단계: 준비 (AI 호출 없음, 2026-10-24)
@@ -62,6 +62,17 @@
 | API 환산 비용 | $0.54 (구독이라 청구는 없고 사용 한도에서 차감) |
 | 도구 사용 | Read 13, Bash 5(전부 거부), Glob 2, Grep 1, Write 1 |
 
-1차 시도는 115초였고 수치는 남지 않았음(#5).
+1차 시도는 115초였고 수치는 남지 않았음(#5). 두 시도 합계는 대략 API 환산 $1 안팎, 입력 약 130만 토큰(대부분 캐시 읽기)으로 추정.
 
-후속 조치(2026-10-25): #2에 대해 요구사항에 미리 계산한 BCrypt 해시를 넣음(Spring Security `BCrypt`, cost 10으로 생성하고 맞는/틀린 비밀번호로 검증). #1은 사용자가 저장소 루트를 Claude Code에서 신뢰 처리. 두 시도 합계는 대략 API 환산 $1 안팎, 입력 약 130만 토큰(대부분 캐시 읽기)으로 추정.
+후속 조치(2026-10-25): #2에 대해 요구사항에 미리 계산한 BCrypt 해시를 넣음(Spring Security `BCrypt`, cost 10으로 생성하고 맞는/틀린 비밀번호로 검증). #1은 사용자가 저장소 루트를 Claude Code에서 신뢰 처리.
+
+- 요구사항 변경을 `dev`에 merge할 때 또 "target branch worktree must be clean": `dev` 시점 `.gitignore`에 새 `.transitions/` 규칙이 없어서(0.5단계와 같은 종류). `.git/info/exclude`에도 추가해 해결
+- **운영 실수:** merge 실패 직후 이어서 실행된 정리 명령이 아직 merge되지 않은 작업 브랜치를 지움. 커밋(`b2bb621`)이 남아 있어 같은 커밋으로 즉시 복구했고, gate·승격 기록은 브랜치 이름과 커밋에 묶여 있어 그대로 유효. 이후 정리는 merge 성공과 `dev` 포함 여부를 확인한 뒤에만 실행
+- 작업 1의 worktree는 갱신 전 `dev`에서 만들어져 새 요구사항(해시)을 모름 → worktree에서 `dev`를 merge해 갱신(1~2차 시도 코드는 유지). 하네스에는 재시도 전에 작업 브랜치를 최신 `dev`로 맞추는 기능이 없음(엔진 개선점)
+
+### 1-2. 재실행 전 엔진 수정 (2026-10-27)
+
+- 1-1의 #3(`dev` 자동 반영 불가)을 다시 확인해 보니 진단이 틀렸음: 하네스는 `dev`가 이미 열린 worktree(기본 작업 폴더 포함)를 그대로 재사용하므로 충돌은 없음. 진짜 위험은 그 폴더에 커밋하지 않은 변경이 있으면 **작업이 다 끝난 뒤** 반영 단계에서야 실패해 토큰이 낭비된다는 것 → 실행 시작 전에 검사해 바로 멈추도록 엔진 수정
+- 1-1의 #4(실패 실행의 사용량 unknown)에 대해, Claude가 실패해도 보고한 사용량을 `reported_usage`로 따로 보존하도록 엔진 수정(성공 판정·예산 계산은 그대로)
+- **gate가 끝나지 않는 문제 발견:** PC 재시작 후 다시 돌린 feature gate가 모든 단계(build·test·check·smoke)를 15:14에 성공했는데도 프로세스가 끝나지 않음. 원인은 Gradle wrapper가 처음 띄운 **Gradle daemon이 하네스의 출력 파이프를 물려받아** 유휴 종료(기본 3시간)까지 살아 있었던 것. `gradlew --stop`으로 daemon을 멈추자 gate가 즉시 완료되어 원인 확인. 10-25~26의 "feature gate 후 3시간 공백"도 같은 원인으로 보임(daemon이 이미 떠 있을 때는 재현되지 않아 그동안 드러나지 않음). Claude worker 안의 `./gradlew test`도 같은 이유로 멈출 수 있어 유료 실행 전에 수정 → `gradle.properties`에 `org.gradle.daemon=false`
+

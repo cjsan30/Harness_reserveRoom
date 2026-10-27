@@ -46,6 +46,25 @@ function Get-ClaudeOutputFromLog([string]$LogPath,[int]$ExitCode) {
         $total=[decimal]$terminal.usage.input_tokens+[decimal]$terminal.usage.cache_read_input_tokens+[decimal]$terminal.usage.cache_creation_input_tokens
         if($total -gt [long]::MaxValue){$known=$false}
     }
+    # A failed invocation keeps usage unknown, but a single well-formed result event still
+    # reports what the provider consumed. Keep it apart so budgets and success stay unchanged.
+    $reported=$null
+    if(-not $known -and $count -eq 1 -and -not $invalid -and $null -ne $terminal.usage){
+        $reportedValid=$true
+        foreach($name in @('input_tokens','cache_read_input_tokens','cache_creation_input_tokens','output_tokens')){
+            if(-not (Test-HarnessUsageInteger $terminal.usage.$name)){$reportedValid=$false}
+        }
+        if($reportedValid){
+            $reportedTotal=[decimal]$terminal.usage.input_tokens+[decimal]$terminal.usage.cache_read_input_tokens+[decimal]$terminal.usage.cache_creation_input_tokens
+            if($reportedTotal -le [long]::MaxValue){
+                $reported=[pscustomobject]@{
+                    status='reported_on_failure';input_tokens=[long]$reportedTotal
+                    cached_input_tokens=$terminal.usage.cache_read_input_tokens;output_tokens=$terminal.usage.output_tokens
+                    source='claude.print.stream-json'
+                }
+            }
+        }
+    }
     # Consume only the invocation result aggregate, never assistant/delta/modelUsage totals again.
     $usage=[pscustomobject]@{
         status=$(if($known){'known'}else{'unknown'});completed_turns=$(if($response -ceq 'completed'){1}else{0})
@@ -55,7 +74,7 @@ function Get-ClaudeOutputFromLog([string]$LogPath,[int]$ExitCode) {
         source='claude.print.stream-json'
     }
     return [pscustomobject]@{
-        response_status=$response;usage=$usage
+        response_status=$response;usage=$usage;reported_usage=$reported
         message=$(if($response -ceq 'completed' -and $ExitCode -eq 0 -and $terminal.result -is [string]){$terminal.result}else{''})
     }
 }

@@ -65,13 +65,23 @@ function Read-HarnessUsageRecords([string]$RootDir) {
 
 function Get-HarnessUsageTotals($Records) {
     [decimal]$tokens=0; [double]$seconds=0; $unknown=0; $reserved=0
+    # Tokens a provider reported for failed invocations. Informational only: the
+    # invocation still counts as unknown and token budgets do not use this number.
+    [decimal]$reportedTokens=0; $reportedCount=0
     foreach($record in @($Records)) {
         if ($record.status -ceq 'reserved') { $reserved++; $unknown++; continue }
         $seconds += $record.duration_seconds
         if ($record.usage.status -ceq 'known') { $tokens += [decimal]$record.usage.input_tokens + [decimal]$record.usage.output_tokens }
-        else { $unknown++ }
+        else {
+            $unknown++
+            $result = $record.PSObject.Properties['provider_result']
+            if ($null -ne $result -and $null -ne $result.Value -and $null -ne $result.Value.PSObject.Properties['reported_usage'] -and $null -ne $result.Value.reported_usage) {
+                $reportedTokens += [decimal]$result.Value.reported_usage.input_tokens + [decimal]$result.Value.reported_usage.output_tokens
+                $reportedCount++
+            }
+        }
     }
-    return [pscustomobject]@{ invocation_count=@($Records).Count; reserved_count=$reserved; unknown_usage_count=$unknown; known_total_tokens=$tokens; completed_duration_seconds=$seconds }
+    return [pscustomobject]@{ invocation_count=@($Records).Count; reserved_count=$reserved; unknown_usage_count=$unknown; known_total_tokens=$tokens; completed_duration_seconds=$seconds; reported_failure_count=$reportedCount; reported_failure_tokens=$reportedTokens }
 }
 
 function New-HarnessUsageReservation([string]$RootDir, $WorkerRecord) {

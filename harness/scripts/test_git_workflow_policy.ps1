@@ -314,6 +314,26 @@ exit 1
         Assert-True ($note.StartsWith('kept: worktree could not be removed cleanly')) "dirty cleanup note: $note"
         Assert-True (-not [string]::IsNullOrWhiteSpace((Get-GitBranchCommit -RootDir $seed -BranchName $dirty.Branch))) 'dirty branch was deleted'
     }
+    Test-Case 'run refuses to start when the dev checkout is dirty (F-13)' {
+        foreach ($name in @('Assert-SeedDevCheckoutReady', 'Invoke-InWorkspace')) {
+            $definition = $dispatchAst.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true)
+            . ([scriptblock]::Create($definition.Extent.Text))
+        }
+        $devCheck = New-PolicyFixture 'dev checkout [safe]' -WithSelf
+        $rootDir = $devCheck
+        $gitConfig = Get-GitWorkflowConfig -RootDir $devCheck
+        Assert-SeedDevCheckoutReady
+        Invoke-FixtureGit $devCheck @('checkout', '-q', 'dev') | Out-Null
+        Assert-SeedDevCheckoutReady
+        Write-Utf8File (Join-Path $devCheck 'sample.txt') 'uncommitted edit'
+        $message = ''
+        try { Assert-SeedDevCheckoutReady } catch { $message = $_.Exception.Message }
+        Assert-True ($message.Contains('is checked out at') -and $message.Contains('sample.txt')) "dirty dev checkout not refused: $message"
+        Invoke-FixtureGit $devCheck @('checkout', '-q', '--', 'sample.txt') | Out-Null
+        Assert-SeedDevCheckoutReady
+        $rootDir = $seed
+        $gitConfig = Get-GitWorkflowConfig -RootDir $seed
+    }
     Test-Case 'resume detects an assignment already promoted into dev' {
         $promoted = New-SeedAssignmentBranch 'promoted-task' 'promoted-task.txt' -Merge
         $pending = New-SeedAssignmentBranch 'pending-task' 'pending-task.txt'
