@@ -24,7 +24,7 @@ Test-Case unit 'help needs no profile or target' {
     $r=Call-Cli @('help','-Json');$j=$r.Output|ConvertFrom-Json
     Assert-True ($r.Success -and $j.schema_version -eq 1 -and $j.output.Contains('-Preview')) $r.Output
 }
-foreach($tokens in @(@('unknown'),@('status','-Force'),@('run'),@('resume','-PlanFile','plan.md','-Model','x'),@('run','-PlanFile','p','-MaxWorkerAttempts','0'),@('run','-PlanFile','p','-DryRun','-PreflightOnly'),@('status','-Json','-Json'),@('init','-ProjectName'))){
+foreach($tokens in @(@('unknown'),@('status','-Force'),@('run'),@('resume','-PlanFile','plan.md','-Model','x'),@('run','-PlanFile','p','-MaxWorkerAttempts','0'),@('run','-PlanFile','p','-DryRun','-PreflightOnly'),@('status','-Json','-Json'),@('init','-ProjectName'),@('attempts'),@('attempts','-AssignmentId','t','-Grant','1'),@('attempts','-AssignmentId','t','-Grant','0','-Reason','r'),@('attempts','-AssignmentId','t','-Reason','r'),@('env','-Grant','1'),@('notify','-Telegram','yes'),@('notify','-QuietStart','25:00'),@('notify','-ReminderMinutes','soon'))){
     Test-Case unit ('invalid options: '+($tokens -join ' ')) {
         $blocked=$false;try{Get-HarnessCliRequest $tokens|Out-Null}catch{$blocked=$true}
         Assert-True $blocked 'invalid arguments accepted'

@@ -33,6 +33,53 @@
     "max_total_duration_seconds": 10800,
     "max_invocation_seconds": 1800
   },
+  "environment": {
+    "version": 1,
+    "requirements": [
+      {
+        "id": "jdk",
+        "description": "JDK 21 for Gradle builds and tests",
+        "check": [
+          "java",
+          "-version"
+        ],
+        "install_hint": {
+          "text": "Install Temurin JDK 21 (set JAVA_HOME):",
+          "url": "https://adoptium.net/temurin/releases/?version=21"
+        }
+      },
+      {
+        "id": "docker",
+        "description": "Docker engine for Testcontainers (PostgreSQL)",
+        "installed": [
+          "docker",
+          "--version"
+        ],
+        "check": [
+          "docker",
+          "info"
+        ],
+        "repair": "docker-start",
+        "install_hint": {
+          "text": "Install Docker Desktop (WSL 2 backend):",
+          "url": "https://docs.docker.com/desktop/setup/install/windows-install/"
+        }
+      }
+    ],
+    "repairs": {
+      "docker-start": {
+        "description": "Start Docker Desktop",
+        "start": [
+          "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe"
+        ],
+        "check": [
+          "docker",
+          "info"
+        ],
+        "wait_seconds": 180
+      }
+    }
+  },
   "commands": {
     "build": ".\\gradlew.bat build -x test",
     "unit": ".\\gradlew.bat test",

@@ -449,3 +449,41 @@ Linux/macOS shell wrappers and Git hooks automatically put PowerShell runtime ca
 이식 배치: `pwsh -NoProfile -File harness/scripts/get_execution_usage.ps1 [-Json]`.
 한도는 활성 프로필의 선택적 `execution_policy`로 지정합니다. [정책 의미와 불확실한 기록 처리](execution_usage.md)를 먼저 확인하세요. 다음 실행 제한이며 실행 중 강제 종료는 아닙니다.
 
+# 실패 분류와 작업당 시도 추가 승인 (2026-10-28)
+
+실패한 시도는 구현·환경·권한·provider·정보 부족으로 분류되며, 작업당 시도 한도(`max_attempts_per_assignment`)에는 구현 실패만 들어갑니다. 환경·권한·정보 부족·provider 사용량 한도나 같은 오류 반복이 생기면 seed 실행은 멈추고 원인을 출력합니다. 원인을 해결한 뒤 `-Resume`으로 이어갑니다.
+
+- 시도 현황: `pwsh -NoProfile -File harness/scripts/harness.ps1 attempts -AssignmentId <id>`
+- 한 작업에만 시도 추가: `... attempts -AssignmentId <id> -Grant 1 -Reason "<이유>"` (커밋 불필요, 로컬 기록)
+
+자세한 분류 기준은 [실행 사용량 문서](execution_usage.md)의 "실패 분류와 작업당 시도"를 보세요.
+
+# 기획 단계 환경 확인과 자동 복구 (2026-10-28)
+
+구현(유료 실행) 전에 필요한 도구와 복구 방법을 정해 프로필 `environment` 절에 적습니다. 형식은 [실행 사용량 문서](execution_usage.md)의 "환경 요구사항과 사전 선언된 복구"를 보세요.
+
+- 확인: `pwsh -NoProfile -File harness/scripts/harness.ps1 env [-Json]`
+- 선언된 복구까지 실행: `... env -Repair`
+- 모든 도구는 **설치 여부부터** 확인합니다(하네스 자체 도구 git·provider CLI 포함). `missing`이 나오면 출력된 설치 안내 링크로 직접 설치한 뒤 다시 확인합니다. 하네스는 빠진 도구를 설치하지 않습니다(2026-10-29).
+- 설치는 됐지만 꺼져 있는 등 `check`만 실패하면 선언된 복구(예: Docker Desktop 시작)를 실행합니다. 복구가 없으면 `needs_decision`입니다. live seed 실행은 준비되지 않은 환경에서 worker를 띄우지 않습니다.
+
+# 실행 멈춤·비용 한도 알림 (2026-10-28)
+
+seed 실행이 멈추거나(`needs_operator`, `repeated_failure`) 비용 한도에 닿으면(`budget`) Telegram과 Discord로 알림을 한 번 보냅니다. 알림 실패는 실행 결과를 바꾸지 않습니다.
+
+- **비밀값**은 환경 변수로만 둡니다: `HARNESS_TELEGRAM_BOT_TOKEN`, `HARNESS_TELEGRAM_CHAT_ID`, `HARNESS_DISCORD_WEBHOOK_URL`. 설정 파일·로그·출력에 쓰지 않으며 메시지 안의 비밀값도 마스킹합니다.
+- **설정**(GUI에서 바꿀 값)은 커밋하지 않는 `harness/state/notifications/settings.json`에 둡니다.
+
+| 설정 | 기본값 | 명령 옵션 |
+| --- | --- | --- |
+| 채널 사용 | Telegram·Discord 모두 켬(비밀값이 있을 때만 실제 발송) | `-Telegram on/off`, `-Discord on/off` |
+| 알림 종류 | 멈춤 켬, 비용 한도 켬, 계획 완료 끔 | `-OnStop`, `-OnBudget`, `-OnCompletion` |
+| 방해 금지 시간 | 끔, 23:00-08:00 | `-QuietHours on/off`, `-QuietStart`, `-QuietEnd` (HH:mm) |
+| 대기 중 재알림 | 120분 간격, 최대 5회, 대기 상한 12시간 | `-ReminderMinutes`(10~1440), `-ReminderCount`(0~50), `-WaitHours`(1~72) |
+
+- 조회·변경: `pwsh -NoProfile -File harness/scripts/harness.ps1 notify [옵션]`
+- 실제 테스트 발송: `... notify -Test` (설정된 채널로 메시지 1건을 실제로 보냄)
+- 방해 금지 시간에는 지금은 **소리 없이** 전달합니다(Telegram `disable_notification`, Discord 무음 플래그). 재알림 간격·횟수·대기 상한은 저장만 되며, 대기하며 재알림을 보내는 기능은 다음 단계(Telegram 원격 조작)에서 사용합니다.
+- 전체 끄기: `HARNESS_NOTIFY_DISABLED=true`.
+
+

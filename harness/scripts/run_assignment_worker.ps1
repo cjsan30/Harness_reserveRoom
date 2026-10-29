@@ -69,8 +69,11 @@ try {
         $OutputEncoding=New-Object System.Text.UTF8Encoding($false)
         [Console]::OutputEncoding=$OutputEncoding
         $global:LASTEXITCODE = 0
-        $prompt | & $executable @workerArguments 2>&1 | ForEach-Object { Append-Utf8File $logFile (Protect-HarnessSecretText $_.ToString()) -ErrorAction Stop }
+        # The last output time tells a hung command apart from a worker still busy at timeout.
+        $lastOutputAt = [DateTime]::UtcNow
+        $prompt | & $executable @workerArguments 2>&1 | ForEach-Object { $lastOutputAt = [DateTime]::UtcNow; Append-Utf8File $logFile (Protect-HarnessSecretText $_.ToString()) -ErrorAction Stop }
         $code = $LASTEXITCODE
+        $idleSecondsAtExit = ([DateTime]::UtcNow - $lastOutputAt).TotalSeconds
     } finally { $ErrorActionPreference = 'Stop'; $OutputEncoding=$previousOutputEncoding; [Console]::OutputEncoding=$previousConsoleEncoding; Pop-Location }
     $duration.Stop()
     if ($null -ne $watchdog) {
@@ -81,6 +84,7 @@ try {
         # Fail closed even if the provider exited at the same moment: 124 matches timeout(1).
         $code = 124
         $record | Add-Member -NotePropertyName timed_out -NotePropertyValue $true -Force
+        $record | Add-Member -NotePropertyName idle_seconds_at_exit -NotePropertyValue ([Math]::Round($idleSecondsAtExit, 1)) -Force
         Append-Utf8File $logFile "Harness: worker exceeded max_invocation_seconds=$timeoutSeconds; provider process tree stopped."
     }
     $providerResult=Get-HarnessProviderResult $record $logFile $code

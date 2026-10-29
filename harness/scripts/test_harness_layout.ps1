@@ -6,6 +6,17 @@ if (-not $OutputDirectory) { $OutputDirectory = Join-Path $engineSource '.test-o
 $testRoot = Join-Path $OutputDirectory ([Guid]::NewGuid().ToString('N'))
 Ensure-HarnessDirectory $testRoot
 $results = New-Object 'System.Collections.Generic.List[object]'
+function Find-GitBundledTool([string]$GitPath,[string]$Name){
+    # git.exe is cmd\git.exe from Windows PATH but mingw64\bin\git.exe inside Git Bash;
+    # walk up to the Git install root that has bin\<tool>.
+    $directory=Split-Path -Parent $GitPath
+    for($i=0;$i -lt 4 -and $directory;$i++){
+        $candidate=Join-Path $directory ('bin/'+$Name)
+        if(Test-Path -LiteralPath $candidate){return $candidate}
+        $directory=Split-Path -Parent $directory
+    }
+    return (Join-Path (Split-Path -Parent (Split-Path -Parent $GitPath)) ('bin/'+$Name))
+}
 function Assert-True($Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 function Test-Case([string]$Name, [scriptblock]$Body) {
     try { & $Body; $results.Add(@{name=$Name; passed=$true}); Write-Output "PASS $Name" }
@@ -59,7 +70,7 @@ try {
             Assert-True $r.Success $r.Output
             Assert-True (Test-Path -LiteralPath (Join-Path $engine 'reports/latest_report.md')) 'report written outside engine layout'
             $shellCommand=Get-Command 'sh' -ErrorAction SilentlyContinue
-            $shellPath=if($null -ne $shellCommand){$shellCommand.Source}else{Join-Path (Split-Path -Parent (Split-Path -Parent (Get-Command git).Source)) 'bin/sh.exe'}
+            $shellPath=if($null -ne $shellCommand){$shellCommand.Source}else{Find-GitBundledTool (Get-Command git).Source 'sh.exe'}
             Assert-True (Test-Path -LiteralPath $shellPath) 'POSIX shell unavailable for cycle test'
             $r=Invoke-HarnessProcess $shellPath @((Join-Path $engine 'scripts/run_harness_cycle.sh').Replace('\','/'),'--skip-retry-prompt') -WorkingDirectory $fixture -AllowFailure
             Assert-True $r.Success ("shell cycle: " + $r.Output)

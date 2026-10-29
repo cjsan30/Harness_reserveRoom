@@ -16,6 +16,24 @@ function Test-Case([string]$Name, [scriptblock]$Body) {
 function Run-Child([string]$File, [object[]]$Arguments = @()) {
     Invoke-HarnessPowerShellFile -FilePath $File -Arguments $Arguments -AllowFailure
 }
+# Field finding F-22: Git writes UTF-8, but a Korean Windows console decodes native
+# output as code page 949. Non-ASCII repository paths must survive a git round trip.
+Test-Case 'git output keeps non-ASCII paths under a code page 949 console' {
+    $korean = [string][char]0xD55C + [char]0xAE00
+    $repo = Join-Path $testRoot ("git utf8 $korean [safe]")
+    Invoke-HarnessProcess git @('init', '-q', $repo) | Out-Null
+    $value = Join-Path $repo ".githooks $korean"
+    Invoke-HarnessProcess git @('-C', $repo, 'config', 'core.hooksPath', $value) | Out-Null
+    $previous = [Console]::OutputEncoding
+    $legacy = $null
+    try { $legacy = [Text.Encoding]::GetEncoding(949) } catch { $legacy = $null }
+    try {
+        if ($null -ne $legacy -and (Test-HarnessIsWindows)) { [Console]::OutputEncoding = $legacy }
+        $read = (Invoke-HarnessProcess git @('-C', $repo, 'config', '--get', 'core.hooksPath')).Output.Trim()
+        Assert-True ($read -ceq $value) "git output was decoded with the console code page: $read"
+        Assert-True ([Console]::OutputEncoding.CodePage -eq $(if ($null -ne $legacy -and (Test-HarnessIsWindows)) { 949 } else { $previous.CodePage })) 'console encoding was not restored'
+    } finally { [Console]::OutputEncoding = $previous }
+}
 function Start-LockChild([string]$Name, [string]$Signal, [string]$StartSignal = '') {
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = Get-HarnessPowerShellExecutable
