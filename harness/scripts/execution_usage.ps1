@@ -95,16 +95,25 @@ function New-HarnessUsageReservation([string]$RootDir, $WorkerRecord) {
         $totals=Get-HarnessUsageTotals $records
         $attempts=@($records | Where-Object { $_.assignment_id -ceq $WorkerRecord.assignment_id -and $_.owner -ceq $WorkerRecord.owner }).Count
         if (@($records | Where-Object { $_.invocation_id -ceq $WorkerRecord.invocation_id }).Count) { throw 'duplicate usage reservation' }
-        if ($null -ne $policy.max_invocations -and $totals.invocation_count -ge $policy.max_invocations) { throw 'execution budget reached: max_invocations' }
-        if ($null -ne $policy.max_attempts_per_assignment -and $attempts -ge $policy.max_attempts_per_assignment) { throw 'execution budget reached: max_attempts_per_assignment' }
-        if ($null -ne $policy.max_concurrent_workers -and $totals.reserved_count -ge $policy.max_concurrent_workers) { throw 'execution budget reached: max_concurrent_workers' }
+        # Messages start with 'execution budget reached:' so the dispatcher can report the
+        # limit instead of treating the refusal as a worker failure.
+        if ($null -ne $policy.max_invocations -and $totals.invocation_count -ge $policy.max_invocations) { throw ("execution budget reached: max_invocations ({0} of {1} invocations used)" -f $totals.invocation_count, $policy.max_invocations) }
+        if ($null -ne $policy.max_attempts_per_assignment) {
+            # Only implementation failures count here; environment, permission, provider and
+            # missing-information stops do not use up an assignment's attempts.
+            $attemptStatus=Get-HarnessAssignmentAttemptStatus $RootDir $WorkerRecord.assignment_id $records $policy
+            if ($attemptStatus.counted -ge $attemptStatus.limit) {
+                throw ("execution budget reached: max_attempts_per_assignment ({0} of {1} counted attempts used for {2}; grant more with: harness.ps1 attempts -AssignmentId {2} -Grant 1 -Reason <text>)" -f $attemptStatus.counted, $attemptStatus.limit, $WorkerRecord.assignment_id)
+            }
+        }
+        if ($null -ne $policy.max_concurrent_workers -and $totals.reserved_count -ge $policy.max_concurrent_workers) { throw ("execution budget reached: max_concurrent_workers ({0} of {1} running)" -f $totals.reserved_count, $policy.max_concurrent_workers) }
         if ($null -ne $policy.max_total_tokens) {
-            if ($totals.unknown_usage_count -gt 0) { throw 'token budget cannot be evaluated while usage is unknown or reserved' }
-            if ($totals.known_total_tokens -ge $policy.max_total_tokens) { throw 'execution budget reached: max_total_tokens' }
+            if ($totals.unknown_usage_count -gt 0) { throw 'execution budget reached: max_total_tokens cannot be evaluated while usage is unknown or reserved' }
+            if ($totals.known_total_tokens -ge $policy.max_total_tokens) { throw ("execution budget reached: max_total_tokens ({0} of {1} tokens used)" -f $totals.known_total_tokens, $policy.max_total_tokens) }
         }
         if ($null -ne $policy.max_total_duration_seconds) {
-            if ($totals.reserved_count -gt 0) { throw 'time budget cannot be evaluated while an invocation is unresolved' }
-            if ($totals.completed_duration_seconds -ge $policy.max_total_duration_seconds) { throw 'execution budget reached: max_total_duration_seconds' }
+            if ($totals.reserved_count -gt 0) { throw 'execution budget reached: max_total_duration_seconds cannot be evaluated while an invocation is unresolved' }
+            if ($totals.completed_duration_seconds -ge $policy.max_total_duration_seconds) { throw ("execution budget reached: max_total_duration_seconds ({0:N0} of {1} seconds used)" -f $totals.completed_duration_seconds, $policy.max_total_duration_seconds) }
         }
         $record=[pscustomobject]@{
             version=1; root=[IO.Path]::GetFullPath($RootDir); invocation_id=$WorkerRecord.invocation_id

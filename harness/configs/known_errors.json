@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "description": "Known failure signatures. The harness matches these literal, case-insensitive texts against a failed attempt to decide its failure class. Entries never instruct the worker; they only drive harness decisions. A project may add entries in harness/project/configs/known_errors.json.",
+  "entries": [
+    {
+      "id": "docker-unavailable",
+      "class": "environment",
+      "sources": ["validation", "worker"],
+      "match_any": [
+        "Cannot connect to the Docker daemon",
+        "Could not find a valid Docker environment",
+        "error during connect",
+        "dockerDesktopLinuxEngine",
+        "docker_engine: The system cannot find the file specified",
+        "Is the docker daemon running"
+      ],
+      "repair": "docker-start",
+      "note": "Docker Desktop or the Docker daemon is not running."
+    },
+    {
+      "id": "command-not-found",
+      "class": "environment",
+      "sources": ["validation"],
+      "match_any": [
+        "command not found",
+        "is not recognized as an internal or external command",
+        "is not recognized as the name of a cmdlet",
+        "No such file or directory: 'gradlew'"
+      ],
+      "repair": null,
+      "note": "A required tool is missing from PATH."
+    },
+    {
+      "id": "java-runtime-missing",
+      "class": "environment",
+      "sources": ["validation"],
+      "match_any": [
+        "JAVA_HOME is not set",
+        "JAVA_HOME is set to an invalid directory",
+        "Unable to locate a Java Runtime",
+        "No Java runtime present"
+      ],
+      "repair": null,
+      "note": "No usable JDK was found."
+    },
+    {
+      "id": "port-in-use",
+      "class": "environment",
+      "sources": ["validation"],
+      "match_any": [
+        "Address already in use",
+        "was already in use",
+        "EADDRINUSE"
+      ],
+      "repair": null,
+      "note": "A network port needed by the tests is held by another process."
+    },
+    {
+      "id": "network-unreachable",
+      "class": "environment",
+      "sources": ["validation"],
+      "match_any": [
+        "Temporary failure in name resolution",
+        "java.net.UnknownHostException",
+        "Network is unreachable",
+        "Could not GET 'https://"
+      ],
+      "repair": null,
+      "note": "The network or a package registry could not be reached."
+    },
+    {
+      "id": "provider-usage-limit",
+      "class": "provider",
+      "kind": "usage_limit",
+      "sources": ["provider"],
+      "match_any": [
+        "usage limit reached",
+        "hit your limit",
+        "5-hour limit reached",
+        "weekly limit reached"
+      ],
+      "repair": null,
+      "note": "The subscription usage limit was reached; wait for the reset time."
+    },
+    {
+      "id": "provider-auth",
+      "class": "provider",
+      "kind": "auth",
+      "sources": ["provider"],
+      "match_any": [
+        "Invalid API key",
+        "Please run /login",
+        "OAuth token has expired",
+        "authentication_error",
+        "Not logged in"
+      ],
+      "repair": null,
+      "note": "The provider login is missing or expired; sign in again."
+    },
+    {
+      "id": "provider-rate-limit",
+      "class": "provider",
+      "kind": "rate_limit",
+      "sources": ["provider"],
+      "match_any": [
+        "rate_limit_error",
+        "API Error: 429"
+      ],
+      "repair": null,
+      "note": "Short-term rate limit; retried after a delay."
+    },
+    {
+      "id": "provider-unavailable",
+      "class": "provider",
+      "kind": "overloaded",
+      "sources": ["provider"],
+      "match_any": [
+        "overloaded_error",
+        "API Error: 529",
+        "API Error: 500",
+        "API Error: 502",
+        "API Error: 503",
+        "API Error: Connection error",
+        "Request timed out"
+      ],
+      "repair": null,
+      "note": "Temporary provider outage; retried after a delay."
+    }
+  ]
+}

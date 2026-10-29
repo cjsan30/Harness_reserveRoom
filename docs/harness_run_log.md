@@ -2,7 +2,7 @@
 
 이 저장소는 [Harness](https://github.com/cjsan30/Harness_) 엔진으로 AI(Claude Code) worker에게 작업을 맡겨 만드는 스터디룸 예약 API입니다. 이 문서는 실행할 때마다 무엇이 실패했고 원인이 무엇이었으며 어떻게 고쳤는지를 기록합니다.
 
-- 엔진 버전: Harness_ `dev` `dd3b8f2` (2026-10-22)를 `harness/`로 복사 → 2026-10-25 `002046d`(F-01~F-11 수정) → 2026-10-27 `7651f7b`(F-13·F-15 수정)로 교체
+- 엔진 버전: Harness_ `dev` `dd3b8f2` (2026-10-22)를 `harness/`로 복사 → 2026-10-25 `002046d`(F-01~F-11 수정) → 2026-10-27 `7651f7b`(F-13·F-15 수정)로 교체 → 2026-10-29 `d102fdd`(실패 원인 분류, 작업별 실패 메모, 환경 확인·복구, 알림, F-22·F-23 수정)
 - 환경: Windows 10, Windows PowerShell 5.1 + PowerShell 7.6, JDK 21 (Temurin), Docker 29.9, Claude Code 2.1.310 (구독)
 
 ## 0단계: 준비 (AI 호출 없음, 2026-10-24)
@@ -76,3 +76,16 @@
 - 1-1의 #4(실패 실행의 사용량 unknown)에 대해, Claude가 실패해도 보고한 사용량을 `reported_usage`로 따로 보존하도록 엔진 수정(성공 판정·예산 계산은 그대로)
 - **gate가 끝나지 않는 문제 발견:** PC 재시작 후 다시 돌린 feature gate가 모든 단계(build·test·check·smoke)를 15:14에 성공했는데도 프로세스가 끝나지 않음. 원인은 Gradle wrapper가 처음 띄운 **Gradle daemon이 하네스의 출력 파이프를 물려받아** 유휴 종료(기본 3시간)까지 살아 있었던 것. `gradlew --stop`으로 daemon을 멈추자 gate가 즉시 완료되어 원인 확인. 10-25~26의 "feature gate 후 3시간 공백"도 같은 원인으로 보임(daemon이 이미 떠 있을 때는 재현되지 않아 그동안 드러나지 않음). Claude worker 안의 `./gradlew test`도 같은 이유로 멈출 수 있어 유료 실행 전에 수정 → `gradle.properties`에 `org.gradle.daemon=false`
 
+### 1-3. 작업 1 재실행 시도 (2026-10-27 15:26)
+
+- 실행: `-Resume`, `dev` 자동 반영 켬, 현황판 캡처 동시 진행
+- 결과: **AI 호출 없이 24초 만에 중단**. 화면 메시지는 "cannot requeue assignment ... because the latest state is in_progress/pending"
+- 원인: 프로필의 `max_attempts_per_assignment: 2`를 작업 1이 10-25에 이미 다 써서(신뢰 문제로 실패한 2회) 하네스가 세 번째 실행 예약을 거부함 — **비용 안전장치가 설계대로 동작**. 거부된 작업은 규칙대로 `in_progress`에 보존
+- 문제: 예약 거부 사유가 화면에 나오지 않고, 재시도 루프가 이어서 재등록을 시도하다 실패한 메시지만 보여 원인 파악이 어려움(엔진 개선점)
+- 해결: 엔진에서 실패 원인을 분류해 **구현 실패만** 작업당 시도로 세도록 변경(환경·권한·provider 문제는 시도를 쓰지 않고 멈추거나 복구). 예약 거부 메시지에 어떤 한도에 몇 회를 썼는지와 추가 승인 명령을 표시(엔진 `d2f418c`). 단, 10-25의 두 시도는 분류 기록이 없는 옛 엔진 실행이라 보수적으로 구현 시도로 셈 → 재개하려면 작업 1에 시도 1회 추가 승인 필요
+
+## 2단계 준비: 엔진 교체와 환경 선언 (2026-10-29, AI 호출 없음)
+
+- 엔진을 `d102fdd`로 교체(28개 파일, 엔진 `dev`와 blob 해시 일치 확인)
+- 프로필에 `environment` 선언: JDK 21(없으면 설치 안내와 함께 멈춤), Docker(설치 여부는 `docker --version`, 동작은 `docker info`, 꺼져 있으면 Docker Desktop 자동 시작 후 최대 180초 대기, 없으면 설치 안내와 함께 멈춤). 하네스 자체 도구(git, Claude CLI)는 엔진이 항상 먼저 확인
+- **실제 복구 실행에서 엔진 버그 발견(F-23):** Docker가 꺼진 상태에서 `harness.ps1 env -Repair`를 실행하자 Docker는 켜졌지만 명령이 7분 넘게 끝나지 않음. 하네스가 띄운 Docker Desktop이 하네스 출력 통로를 물려받아 잡고 있었음(10-27 Gradle daemon과 같은 종류). 실행 중에 같은 일이 생기면 run 전체가 멈췄을 문제 → 엔진에서 분리 실행 방식 수정(`bf8f066`) 후 Docker를 끄고 다시 실행: **7초 만에 Docker 시작, 명령 정상 종료, `environment: ready`**

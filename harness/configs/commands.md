@@ -281,4 +281,11 @@ worker exit requirements and snapshot scope. In a standalone target omit `harnes
 - Standalone: `pwsh -NoProfile -File scripts/get_execution_usage.ps1 [-Json]`
 - Installed: `pwsh -NoProfile -File harness/scripts/get_execution_usage.ps1 [-Json]`
 - Optional `execution_policy` in the active profile controls launch count, assignment attempts, concurrency and subsequent-launch token/time thresholds. See `docs/execution_usage.md`; no provider quota or monetary amount is inferred.
+- `max_attempts_per_assignment` counts only attempts classified as implementation failures (2026-10-28). Show or extend one assignment's attempts:
+  - `pwsh -NoProfile -File harness/scripts/harness.ps1 attempts -AssignmentId <id> [-Json]`
+  - `pwsh -NoProfile -File harness/scripts/harness.ps1 attempts -AssignmentId <id> -Grant 1 -Reason "<text>"`
+- Environment requirements and operator-declared repairs live in the profile `environment` section; decide them before a paid run. Every requirement (and the harness's own git and provider CLI) is first checked for being installed; a missing tool stops with its `install_hint` and is never installed or repaired:
+  - `pwsh -NoProfile -File harness/scripts/harness.ps1 env [-Repair] [-Json]`
+- Run-stop and budget notifications (Telegram, Discord webhook). Secrets stay in environment variables; settings are local state:
+  - `pwsh -NoProfile -File harness/scripts/harness.ps1 notify [-Telegram on|off] [-Discord on|off] [-OnStop|-OnBudget|-OnCompletion on|off] [-QuietHours on|off -QuietStart HH:mm -QuietEnd HH:mm] [-ReminderMinutes n -ReminderCount n -WaitHours n] [-Test] [-Json]`
 
