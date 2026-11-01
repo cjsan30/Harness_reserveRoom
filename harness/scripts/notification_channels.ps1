@@ -116,6 +116,42 @@ function Send-HarnessNotification([string]$RootDir, [string]$EventName, [string]
     return $results.ToArray()
 }
 
+# Notifications are fixed Korean templates filled locally (no AI call, no tokens). Known engine
+# reasons map to a short Korean phrase; anything else keeps only a short excerpt of the original.
+function ConvertTo-HarnessKoreanReason([string]$Text) {
+    if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
+    $rules = @(
+        @('no unique execution evidence', '완료 기록 거부: 검증 증거가 하나로 정해지지 않음'),
+        @('permission problem|denied tool use', '권한 문제: 필요한 도구 사용이 거부됨'),
+        @('usage limit', 'AI 사용량 한도 도달'),
+        @('budget', '실행 한도 도달'),
+        @('repeated', '같은 오류 반복'),
+        @('unresolved worker|worker_unresolved', '종료가 확인되지 않은 worker가 있음'),
+        @('requires resume', '이전 실패 작업이 있어 재개 필요'),
+        @('provider reported execution failure', 'AI 실행 결과가 실패로 보고됨'),
+        @('preflight', '사전 점검 실패'),
+        @('timed out|timeout', '시간 초과'),
+        @('environment|docker|InvalidPathException', '환경 문제'),
+        @('validation|tests? failed', '검증 실패')
+    )
+    $korean = $null
+    foreach ($rule in $rules) { if ($Text -match ('(?i)' + $rule[0])) { $korean = $rule[1]; break } }
+    if ($null -eq $korean) {
+        $plain = ($Text -replace '\s+', ' ').Trim()
+        if ($plain.Length -gt 100) { $plain = $plain.Substring(0, 100) + '...' }
+        return "분류되지 않은 오류: $plain"
+    }
+    if ($Text -match '\((\d+) of (\d+)') { $korean += " ($($Matches[1])/$($Matches[2]))" }
+    return $korean
+}
+
+function Format-HarnessAssignmentLabel([string]$AssignmentId) {
+    # plan__01__task-name -> "01 task-name"
+    $parts = @($AssignmentId -split '__' | Where-Object { $_ })
+    if ($parts.Count -ge 3) { return ($parts[-2] + ' ' + $parts[-1]) }
+    return $AssignmentId
+}
+
 function Format-HarnessStopNotification([string]$Project, [string]$StopKind, [string]$AssignmentId, [string]$Reason, [string]$PlanFile) {
     $title = switch ($StopKind) {
         'budget' { '[Harness] 비용 한도 도달' }
@@ -125,15 +161,15 @@ function Format-HarnessStopNotification([string]$Project, [string]$StopKind, [st
         default { '[Harness] 사용자 확인 필요' }
     }
     $next = switch ($StopKind) {
-        'budget' { "사용량 확인: harness.ps1 usage / 작업별 시도: harness.ps1 attempts -AssignmentId $AssignmentId" }
-        'repeated_failure' { "실패 메모 확인: harness/state/failures/$AssignmentId.md, 계속하려면 harness.ps1 attempts -AssignmentId $AssignmentId -Grant 1 -Reason <이유>" }
+        'budget' { '사용량 확인: harness.ps1 usage' }
+        'repeated_failure' { "실패 메모(harness/state/failures/$AssignmentId.md) 확인 후 harness.ps1 attempts -Grant 1" }
         'completion' { 'main 반영 승인 대기' }
-        'error' { "로그 확인: harness/reports/seed_plans/ 의 dispatch summary와 reports/agent_runs/, 원인 해결 후: harness.ps1 resume -PlanFile $PlanFile -Execute" }
-        default { "원인 해결 후: harness.ps1 resume -PlanFile $PlanFile -Execute" }
+        'error' { "로그(reports/agent_runs) 확인 후 harness.ps1 resume -PlanFile $PlanFile -Execute" }
+        default { "원인 해결 후 harness.ps1 resume -PlanFile $PlanFile -Execute" }
     }
-    $lines = @($title, "project: $Project")
-    if ($AssignmentId -and $AssignmentId -ne 'none') { $lines += "assignment: $AssignmentId" }
-    if ($Reason) { $lines += "reason: $(if ($Reason.Length -gt 500) { $Reason.Substring(0, 500) + '...' } else { $Reason })" }
-    $lines += "next: $next"
+    $lines = @($title, "프로젝트: $Project")
+    if ($AssignmentId -and $AssignmentId -ne 'none') { $lines += "작업: $(Format-HarnessAssignmentLabel $AssignmentId)" }
+    if ($Reason) { $lines += "원인: $(ConvertTo-HarnessKoreanReason $Reason)" }
+    $lines += "다음: $next"
     return ($lines -join "`n")
 }

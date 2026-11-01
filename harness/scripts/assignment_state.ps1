@@ -229,6 +229,8 @@ function Repair-AssignmentWorkerExit {
                     $note = Protect-HarnessSecretText ($Reason.Trim())
                     if ($note.Length -gt 500) { $note = $note.Substring(0, 500) }
                     $text = $passText -replace '- result: pass', '- result: fail'
+                    # Keep the unbound evidence id for audit under another key: a retry appends its own evidence line.
+                    $text = $text -replace '(?m)^(\s*)- validation_evidence:', '$1- previous_validation_evidence:'
                     $text += "`n`n## Recovery`n`n- reason: pass record could not be bound to execution evidence ($bindingError); marked failed by the operator`n- operator_note: $note`n- invocation_id: $($record.invocation_id)`n"
                     Move-FileWithUpdatedContent $done[0].FullName (Join-Path $dirs.Done ($AssignmentId + '__fail.md')) $text $queueLease
                 } elseif ($MarkFailed) {

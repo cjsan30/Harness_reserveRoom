@@ -212,6 +212,8 @@ $global:LASTEXITCODE=0
                     Assert-True ($mark.Success -and $mark.Output.Contains('marked failed')) $mark.Output
                     $failText=[IO.File]::ReadAllText((Join-Path $dirs.Done 'task__fail.md'))
                     Assert-True (-not (Test-Path -LiteralPath (Join-Path $dirs.Done 'task__pass.md')) -and $failText.Contains('- result: fail') -and $failText.Contains('harness misread a successful provider log')) 'pass record was not turned into a failure'
+                    # F-27: the unbound evidence id stays for audit but can no longer count as evidence for a retry.
+                    Assert-True ($failText -notmatch '(?m)^\s*- validation_evidence:' -and $failText -match '(?m)^\s*- previous_validation_evidence: [a-f0-9]{32}') 'old evidence line would block the retry completion'
                     Assert-True ((Get-AssignmentWorkerRecord $root 'task').status -eq 'settled') 'worker not settled after marking failed'
                     Reject {Repair-AssignmentWorkerExit $root 'tester' 'task' -MarkFailed -Reason 'again'}
                 }

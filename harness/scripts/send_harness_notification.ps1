@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$StatusFile = "",
     [string]$Message = "",
     [ValidateSet("", "telegram", "none")]
@@ -127,40 +127,29 @@ function Format-HarnessNotificationMessage {
     }
 
     if ($null -eq $Status) {
-        return "Harness notification"
+        return "[Harness] 알림"
     }
 
-    $failureType = if ($null -ne $Status.failure) { [string]$Status.failure.type } else { "none" }
-    $failureAction = if ($null -ne $Status.failure) { [string]$Status.failure.next_action } else { "none" }
-    $nextActions = if ($null -ne $Status.next_actions -and @($Status.next_actions).Count -gt 0) {
-        (@($Status.next_actions) | ForEach-Object { "- " + [string]$_ }) -join [Environment]::NewLine
-    } else {
-        "- none"
+    $statusText = switch ([string]$Status.status) {
+        'seed_failed' { '실행 실패' }
+        'cycle_failed' { '검증 사이클 실패' }
+        'preflight_failed' { '사전 점검 실패' }
+        'needs_user_input' { '사용자 입력 필요' }
+        'needs_profile' { '대상 프로필 없음' }
+        'needs_preflight' { '사전 점검 필요' }
+        'needs_baseline_commit' { '기준 커밋 필요' }
+        'needs_intake' { '요구사항 정리 필요' }
+        'seed_live_passed' { '실행 통과' }
+        default { "확인 필요 ($([string]$Status.status))" }
     }
-    $blocking = if ($null -ne $Status.blocking -and @($Status.blocking).Count -gt 0) {
-        (@($Status.blocking) | ForEach-Object { "- " + [string]$_ }) -join [Environment]::NewLine
-    } else {
-        "- none"
-    }
-
-    $messageText = @"
-[Harness] Attention Required
-
-status: $($Status.status)
-phase: $($Status.phase)
-user_action_required: $($Status.user_action_required)
-failure: $failureType
-
-blocking:
-$blocking
-
-next_actions:
-$nextActions
-
-failure_next_action: $failureAction
-next_command: $($Status.next_command)
-root: $rootDir
-"@
+    $reasonSource = ''
+    if ($null -ne $Status.failure -and -not [string]::IsNullOrWhiteSpace([string]$Status.failure.message)) { $reasonSource = [string]$Status.failure.message }
+    elseif ($null -ne $Status.blocking -and @($Status.blocking).Count -gt 0) { $reasonSource = [string]@($Status.blocking)[0] }
+    $lines = @("[Harness] $statusText", "프로젝트: $(Split-Path -Leaf $rootDir)")
+    if ($reasonSource) { $lines += "원인: $(ConvertTo-HarnessKoreanReason $reasonSource)" }
+    if ($Status.user_action_required -eq $true) { $lines += '사용자 조치: 필요' }
+    $lines += '다음: harness.ps1 status 또는 현황판에서 확인'
+    $messageText = $lines -join [Environment]::NewLine
 
     if ($messageText.Length -gt 3800) {
         return $messageText.Substring(0, 3800) + [Environment]::NewLine + "[truncated]"

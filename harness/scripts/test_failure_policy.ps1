@@ -304,7 +304,7 @@ Case integration 'requeue replaces the previous failure section with the indente
     $null=Save-HarnessAttemptClassification $rootDir (Worker) $c
     foreach($round in 1..2){
         $inbox=Join-Path $dirs.Inbox 'task.md'
-        $content=if(Test-Path -LiteralPath $inbox){[IO.File]::ReadAllText($inbox).Replace('- status: inbox','- status: done').Replace('- result: pending','- result: fail')}else{"- assignment_id: task`n- status: done`n- result: fail`n"}
+        $content=if(Test-Path -LiteralPath $inbox){[IO.File]::ReadAllText($inbox).Replace('- status: inbox','- status: done').Replace('- result: pending','- result: fail')}else{"- assignment_id: task`n- status: done`n- result: fail`n- validation_evidence: 0123456789abcdef0123456789abcdef`n"}
         if(Test-Path -LiteralPath $inbox){Remove-Item -LiteralPath $inbox}
         Write-Utf8File (Join-Path $dirs.Done 'task__fail.md') $content
         $script:lifecycleFile=Join-Path $dirs.Done 'task__fail.md'
@@ -317,6 +317,8 @@ Case integration 'requeue replaces the previous failure section with the indente
         Assert-True (@($text -split '\r?\n' | Where-Object {$_ -match '^- result: '}).Count -le 1) 'failure text added a metadata line'
     }
     Assert-True ($packetText.Contains('Do it.') -and $assignment.Contains('- retry_attempt: 2')) 'packet task or retry count lost'
+    # F-27: a retry must bring new evidence; an old evidence line made its completion ambiguous.
+    Assert-True ($assignment -notmatch '(?m)^\s*- validation_evidence:') 'stale evidence line survived the requeue'
 }
 
 Write-Utf8File (Join-Path $testRoot 'results.json') ($results.ToArray()|ConvertTo-Json -Depth 8)
