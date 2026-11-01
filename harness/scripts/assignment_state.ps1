@@ -197,13 +197,18 @@ function Set-AssignmentWorkerSettled {
 }
 
 function Repair-AssignmentWorkerExit {
-    param([string]$RootDir, [string]$Owner, [string]$AssignmentId)
+    # -MarkFailed is an operator decision for a confirmed exit whose pass record cannot be
+    # bound to the execution evidence (for example the provider result is failed): the
+    # record becomes a failure so the assignment can be retried. It never produces a pass.
+    param([string]$RootDir, [string]$Owner, [string]$AssignmentId, [switch]$MarkFailed, [string]$Reason)
+    if ($MarkFailed -and [string]::IsNullOrWhiteSpace($Reason)) { throw 'marking a pass record failed requires a reason' }
     $invokePath = Get-AssignmentInvokeLockPath $RootDir $AssignmentId
     $invokeLease = Acquire-HarnessLock (Split-Path -Parent $invokePath) (Split-Path -Leaf $invokePath)
     if ($null -eq $invokeLease) { throw 'invocation is active; reconciliation refused' }
     try {
         $paths = Get-AssignmentWorkerPaths $RootDir $AssignmentId
         $record = Get-AssignmentWorkerRecord $RootDir $AssignmentId
+        if ($MarkFailed -and ($null -eq $record -or $record.status -ceq 'settled')) { throw 'nothing to mark failed: the worker is already settled' }
         if ($null -eq $record -or $record.status -ceq 'settled') { return }
         if ($record.owner -cne $Owner) { throw 'worker owner mismatch' }
         if ((Test-HarnessLockActive $paths.Lease) -or $record.status -cne 'exited') {
@@ -216,7 +221,21 @@ function Repair-AssignmentWorkerExit {
             $done = @(Get-ChildItem -LiteralPath $dirs.Done -Filter '*.md' -File | Where-Object { $_.BaseName -cin @(($AssignmentId + '__pass'), ($AssignmentId + '__fail')) })
             if ($done.Count -gt 1 -or ($done.Count -eq 1 -and (Test-Path -LiteralPath $progress))) { throw 'conflicting completion files require inspection' }
             if($done.Count -eq 1 -and $done[0].BaseName -ceq ($AssignmentId+'__pass')){
-                Assert-AssignmentCompletionEvidence $RootDir $Owner $AssignmentId ([IO.File]::ReadAllText($done[0].FullName)) | Out-Null
+                $passText = [IO.File]::ReadAllText($done[0].FullName)
+                $bindingError = $null
+                try { Assert-AssignmentCompletionEvidence $RootDir $Owner $AssignmentId $passText | Out-Null } catch { $bindingError = $_.Exception.Message }
+                if ($null -ne $bindingError) {
+                    if (-not $MarkFailed) { throw $bindingError }
+                    $note = Protect-HarnessSecretText ($Reason.Trim())
+                    if ($note.Length -gt 500) { $note = $note.Substring(0, 500) }
+                    $text = $passText -replace '- result: pass', '- result: fail'
+                    $text += "`n`n## Recovery`n`n- reason: pass record could not be bound to execution evidence ($bindingError); marked failed by the operator`n- operator_note: $note`n- invocation_id: $($record.invocation_id)`n"
+                    Move-FileWithUpdatedContent $done[0].FullName (Join-Path $dirs.Done ($AssignmentId + '__fail.md')) $text $queueLease
+                } elseif ($MarkFailed) {
+                    throw 'the pass record is bound to its execution evidence; nothing to mark failed'
+                }
+            } elseif ($MarkFailed) {
+                throw 'nothing to mark failed: no pass record exists for this assignment'
             }
             if ($done.Count -eq 0) {
                 if (-not (Test-Path -LiteralPath $progress)) { throw 'no assignment exists to reconcile worker exit' }

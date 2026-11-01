@@ -1,5 +1,7 @@
 param([string]$OutputDirectory='')
 $ErrorActionPreference='Stop'
+# Tests never send real notifications: drop the operator's notification secrets (F-26).
+foreach ($harnessNotifySecret in @('HARNESS_TELEGRAM_BOT_TOKEN', 'HARNESS_TELEGRAM_CHAT_ID', 'HARNESS_DISCORD_WEBHOOK_URL', 'HARNESS_NOTIFY_PROVIDER')) { [Environment]::SetEnvironmentVariable($harnessNotifySecret, $null, 'Process') }
 . (Join-Path $PSScriptRoot 'harness_common.ps1')
 $source=Split-Path -Parent $PSScriptRoot
 if(-not $OutputDirectory){$OutputDirectory=Join-Path $source '.test-output'}
@@ -197,11 +199,21 @@ $global:LASTEXITCODE=0
                 if($mode -eq 'normal'){
                     Assert-True ($r.Success -and $worker.status -eq 'settled' -and $ledger.usage.input_tokens -eq 100) $r.Output
                     Assert-True (([IO.File]::ReadAllText((Join-Path $engine 'reports/agent_runs/task__last_message.txt'))).Trim() -eq 'done') 'last message missing'
+                    Reject {Repair-AssignmentWorkerExit $root 'tester' 'task' -MarkFailed -Reason 'a bound pass must not be downgraded'}
                 }else{
                     Assert-True (-not $r.Success -and $worker.exit_code -eq 0 -and $worker.provider_result.execution_status -eq 'failed' -and $worker.status -eq 'exited') 'failed provider settled'
                     Reject {Repair-AssignmentWorkerExit $root 'tester' 'task'}
                     $recheck=Invoke-HarnessPowerShellFile (Join-Path $engine 'scripts/complete_assignment.ps1') @('-Agent','tester','-AssignmentId','task','-Result','pass','-Revalidate') -AllowFailure
                     Assert-True (-not $recheck.Success) 'revalidation laundered failure'
+                    # Operator recovery (F-24 follow-up): only an explicit, reasoned decision turns the
+                    # unbindable pass into a failure; nothing turns it into a pass.
+                    Reject {Repair-AssignmentWorkerExit $root 'tester' 'task' -MarkFailed}
+                    $mark=Invoke-HarnessPowerShellFile (Join-Path $engine 'scripts/repair_assignment_state.ps1') @('-Agent','tester','-AssignmentId','task','-MarkFailed','-Reason','harness misread a successful provider log') -AllowFailure
+                    Assert-True ($mark.Success -and $mark.Output.Contains('marked failed')) $mark.Output
+                    $failText=[IO.File]::ReadAllText((Join-Path $dirs.Done 'task__fail.md'))
+                    Assert-True (-not (Test-Path -LiteralPath (Join-Path $dirs.Done 'task__pass.md')) -and $failText.Contains('- result: fail') -and $failText.Contains('harness misread a successful provider log')) 'pass record was not turned into a failure'
+                    Assert-True ((Get-AssignmentWorkerRecord $root 'task').status -eq 'settled') 'worker not settled after marking failed'
+                    Reject {Repair-AssignmentWorkerExit $root 'tester' 'task' -MarkFailed -Reason 'again'}
                 }
             }finally{$env:CODEX_HARNESS_ROOT=$oldRoot;$env:HARNESS_CLAUDE_PATH=$oldPath;$env:CODEX_GIT_WORKSPACE_ROOT=$oldWorkspace}
         }

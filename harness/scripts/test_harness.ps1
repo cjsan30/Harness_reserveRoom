@@ -1,5 +1,7 @@
 param([switch]$SyntaxOnly)
 $ErrorActionPreference = 'Stop'
+# Tests never send real notifications: drop the operator's notification secrets (F-26).
+foreach ($harnessNotifySecret in @('HARNESS_TELEGRAM_BOT_TOKEN', 'HARNESS_TELEGRAM_CHAT_ID', 'HARNESS_DISCORD_WEBHOOK_URL', 'HARNESS_NOTIFY_PROVIDER')) { [Environment]::SetEnvironmentVariable($harnessNotifySecret, $null, 'Process') }
 $root = Split-Path -Parent $PSScriptRoot
 $failures = New-Object 'System.Collections.Generic.List[string]'
 $scripts = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File)
