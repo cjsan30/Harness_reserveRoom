@@ -98,6 +98,17 @@ try {
         $attributes = [IO.File]::ReadAllText((Join-Path $spring '.gitattributes'))
         Assert-True ($attributes.Contains('harness/githooks/* text eol=lf')) 'harness attribute rules missing'
     }
+    Test-Case 'every engine state directory is ignored and audited' {
+        # Field finding: harness/state/failures/ was missing and a failure memo was committed to a target.
+        $template = @([IO.File]::ReadAllLines((Join-Path $engineRoot 'configs/gitignore.template')) | ForEach-Object { $_.Trim() })
+        $audit = [IO.File]::ReadAllText((Join-Path $engineRoot 'scripts/audit_generated_artifacts.ps1'))
+        $used = @(Get-ChildItem -LiteralPath (Join-Path $engineRoot 'scripts') -Filter '*.ps1' | Where-Object { $_.Name -notlike 'test_*' } | ForEach-Object { [regex]::Matches([IO.File]::ReadAllText($_.FullName), 'harness/state/([a-z_]+)') | ForEach-Object { $_.Groups[1].Value } } | Sort-Object -Unique)
+        Assert-True ($used.Count -ge 6) "state directories not found: $($used -join ',')"
+        foreach ($dir in $used) {
+            Assert-True ($template -contains "harness/state/$dir/") "gitignore template misses harness/state/$dir/"
+            Assert-True ($audit.Contains("^harness/state/$dir/")) "generated-artifact audit misses harness/state/$dir/"
+        }
+    }
     Test-Case 'rerunning the adapter does not duplicate merged rules' {
         $again = Invoke-Adapter $spring @('-ProjectName', 'fixture-app', '-Language', 'java', '-Framework', 'gradle', '-Force')
         Assert-True $again.Success $again.Output

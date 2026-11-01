@@ -25,6 +25,8 @@ harness/state/validation/
 harness/state/worktrees/
 harness/state/git_workflow/
 harness/state/notifications/
+harness/state/failures/
+harness/state/attempt_grants/
 .env
 .env.*
 !.env.example

@@ -24,6 +24,8 @@ state/locks/
 state/worktrees/
 state/git_workflow/
 state/notifications/
+state/failures/
+state/attempt_grants/
 assignments/*/inbox/*.md
 assignments/*/in_progress/*.md
 assignments/*/done/*.md
@@ -54,6 +56,8 @@ harness/state/locks/
 harness/state/worktrees/
 harness/state/git_workflow/
 harness/state/notifications/
+harness/state/failures/
+harness/state/attempt_grants/
 harness/assignments/*/inbox/*.md
 harness/assignments/*/in_progress/*.md
 harness/assignments/*/done/*.md
