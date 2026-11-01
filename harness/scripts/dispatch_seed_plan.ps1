@@ -1,3 +1,5 @@
+# Unknown options must fail: a mistyped switch (for example -Preview) would otherwise start a paid run.
+[CmdletBinding()]
 param(
     [switch]$InvokeCodex,
     [switch]$Ephemeral,
@@ -445,6 +447,8 @@ function Requeue-FailedAssignment {
 
     $raw = Get-Content -Raw -LiteralPath $current.File
     $updated = $raw -replace "- status: done", "- status: inbox"
+    # A retry must prove itself with new evidence; an old evidence line would make completion ambiguous.
+    $updated = [System.Text.RegularExpressions.Regex]::Replace($updated, '(?m)^[ \t]*- validation_evidence:[^\r\n]*(\r?\n)?', '')
     $updated = [System.Text.RegularExpressions.Regex]::Replace($updated, "- result: [^\r\n]+", "- result: pending", 1)
     if ($updated -match "(?m)^- retry_attempt: ") {
         $updated = [System.Text.RegularExpressions.Regex]::Replace($updated, "- retry_attempt: [^\r\n]+", ("- retry_attempt: " + $NextAttempt), 1)

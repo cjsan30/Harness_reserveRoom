@@ -99,11 +99,31 @@ Case security 'test suites never inherit real notification secrets' {
 }
 Case unit 'messages name the stop kind and the next step, and long reasons are cut' {
     $budget=Format-HarnessStopNotification 'p' 'budget' 'task-1' 'execution budget reached: max_invocations (12 of 12 invocations used)' 'plan.md'
-    Assert-True ($budget.Contains('비용 한도 도달') -and $budget.Contains('12 of 12') -and $budget.Contains('harness.ps1 usage')) "budget message wrong: $budget"
+    Assert-True ($budget.Contains('비용 한도 도달') -and $budget.Contains('실행 한도 도달 (12/12)') -and $budget.Contains('harness.ps1 usage')) "budget message wrong: $budget"
     $repeat=Format-HarnessStopNotification 'p' 'repeated_failure' 'task-1' ('x'*900) 'plan.md'
     Assert-True ($repeat.Contains('harness/state/failures/task-1.md') -and $repeat.Length -lt 800) 'repeat message wrong or too long'
     $errorText=Format-HarnessStopNotification 'p' 'error' 'none' 'provider reported execution failure' 'plan.md'
-    Assert-True ($errorText.Contains('실행 오류로 중단') -and $errorText.Contains('provider reported execution failure') -and $errorText.Contains('dispatch summary')) "error message wrong: $errorText"
+    Assert-True ($errorText.Contains('실행 오류로 중단') -and $errorText.Contains('AI 실행 결과가 실패로 보고됨') -and $errorText.Contains('agent_runs')) "error message wrong: $errorText"
+}
+Case unit 'messages are short Korean templates: known reasons are translated, unknown ones cut' {
+    $stop=Format-HarnessStopNotification 'Harness_reserveRoom' 'needs_operator' 'reserve-room-v1__01__schema-foundation' 'stopped (needs_operator) at reserve-room-v1__01__schema-foundation: permission problem: the provider denied tool use' 'plan.md'
+    Assert-True ($stop.Contains('작업: 01 schema-foundation') -and $stop.Contains('원인: 권한 문제') -and @($stop -split "`n").Count -le 5 -and $stop -notmatch 'denied tool use') "stop message not short Korean: $stop"
+    Assert-True ((ConvertTo-HarnessKoreanReason 'completion has no unique execution evidence; validation required').StartsWith('완료 기록 거부')) 'evidence reason not translated'
+    $unknown=ConvertTo-HarnessKoreanReason ('zzz '+('y'*300))
+    Assert-True ($unknown.StartsWith('분류되지 않은 오류: zzz') -and $unknown.Length -lt 130) "unknown reason not cut: $unknown"
+}
+Case integration 'status-change notification is a short Korean message' {
+    $root=Join-Path $testRoot ('notify status [safe] '+[Guid]::NewGuid().ToString('N'));$engine=Join-Path $root 'harness'
+    Ensure-HarnessDirectory $engine
+    foreach($dir in @('scripts','configs')){Copy-Item -LiteralPath (Join-Path $source $dir) -Destination (Join-Path $engine $dir) -Recurse}
+    Write-Utf8File (Join-Path $engine 'project/configs/project_profile.json') '{"project":{"name":"status-project"}}'
+    Write-Utf8File (Join-Path $engine 'reports/status.json') '{"status":"preflight_failed","phase":"preflight","user_action_required":true,"failure":{"type":"environment","message":"docker daemon is not running"},"blocking":["preflight failed"],"next_actions":["fix it"]}'
+    $old=$env:CODEX_HARNESS_ROOT
+    try{
+        $env:CODEX_HARNESS_ROOT=$root
+        $r=Invoke-HarnessPowerShellFile -FilePath (Join-Path $engine 'scripts/send_harness_notification.ps1') -Arguments @('-Provider','telegram','-DryRun','-Force') -AllowFailure
+    }finally{$env:CODEX_HARNESS_ROOT=$old}
+    Assert-True ($r.Success -and $r.Output.Contains('[Harness] 사전 점검 실패') -and $r.Output.Contains('원인: 환경 문제') -and $r.Output.Contains('사용자 조치: 필요') -and $r.Output -notmatch 'Attention Required|next_actions') "status message wrong: $($r.Output)"
 }
 Case integration 'the notify command changes settings and a test message restores them' {
     $root=Join-Path $testRoot ('notify cli [safe] '+[Guid]::NewGuid().ToString('N'));$engine=Join-Path $root 'harness'

@@ -1,3 +1,5 @@
+# Unknown options must fail: a mistyped switch (for example -Preview) would otherwise start a paid run.
+[CmdletBinding()]
 param(
     [switch]$Ephemeral,
     [string]$Model,

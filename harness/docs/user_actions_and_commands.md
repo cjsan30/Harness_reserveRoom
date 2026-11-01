@@ -170,6 +170,8 @@ pwsh -NoProfile -File harness/scripts/get_harness_status.ps1
 
 After the environment variables are set, `get_harness_status.ps1` automatically calls Telegram notification delivery after each status snapshot. Duplicate notification signatures are suppressed, so the same unresolved state is not repeatedly sent.
 
+Messages are short Korean templates filled locally; no AI call or token is used. A message has a title, `프로젝트`, `작업` (for run stops), `원인`, and `다음`. Known engine reasons are mapped to a Korean phrase; an unknown reason keeps only its first 100 characters. Details stay in the dashboard and `harness/reports/`.
+
 Notification levels:
 
 - `attention`: default; sends when the harness likely needs attention

@@ -124,6 +124,15 @@ Test-Case security 'arbitrary script command cannot be selected' {
     $r=Call-Cli @('../scripts/complete_assignment.ps1','-Json')
     Assert-True ($r.ExitCode -eq 2) 'arbitrary script command accepted'
 }
+Test-Case security 'paid run entry points refuse unknown options before doing anything' {
+    # Field finding: '-Preview' on run_seed_handoff.ps1 was silently ignored and started a real run.
+    $empty=Join-Path $testRoot 'unknown-option';Ensure-HarnessDirectory $empty
+    foreach($name in @('run_seed_handoff.ps1','dispatch_seed_plan.ps1')){
+        $r=Invoke-HarnessProcess (Get-HarnessPowerShellExecutable) @('-NoProfile','-File',(Join-Path $PSScriptRoot $name),'-Preview') -WorkingDirectory $empty -AllowFailure
+        Assert-True ($r.ExitCode -ne 0 -and $r.Output.Contains('Preview')) "$name accepted an unknown option: $($r.Output)"
+    }
+    Assert-True (@(Get-ChildItem -LiteralPath $empty -Force).Count -eq 0) 'refused run still wrote files'
+}
 Write-Utf8File (Join-Path $testRoot 'results.json') ($results.ToArray()|ConvertTo-Json -Depth 8)
 $failed=@($results|Where-Object{-not $_.passed}).Count
 Write-Output "CLI results: $($results.Count-$failed)/$($results.Count) passed; artifacts: $testRoot"
