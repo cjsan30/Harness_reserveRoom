@@ -121,12 +121,14 @@ function Format-HarnessStopNotification([string]$Project, [string]$StopKind, [st
         'budget' { '[Harness] 비용 한도 도달' }
         'repeated_failure' { '[Harness] 같은 오류 반복으로 중단' }
         'completion' { '[Harness] 계획 완료' }
+        'error' { '[Harness] 실행 오류로 중단' }
         default { '[Harness] 사용자 확인 필요' }
     }
     $next = switch ($StopKind) {
         'budget' { "사용량 확인: harness.ps1 usage / 작업별 시도: harness.ps1 attempts -AssignmentId $AssignmentId" }
         'repeated_failure' { "실패 메모 확인: harness/state/failures/$AssignmentId.md, 계속하려면 harness.ps1 attempts -AssignmentId $AssignmentId -Grant 1 -Reason <이유>" }
         'completion' { 'main 반영 승인 대기' }
+        'error' { "로그 확인: harness/reports/seed_plans/ 의 dispatch summary와 reports/agent_runs/, 원인 해결 후: harness.ps1 resume -PlanFile $PlanFile -Execute" }
         default { "원인 해결 후: harness.ps1 resume -PlanFile $PlanFile -Execute" }
     }
     $lines = @($title, "project: $Project")

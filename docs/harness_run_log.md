@@ -2,7 +2,7 @@
 
 이 저장소는 [Harness](https://github.com/cjsan30/Harness_) 엔진으로 AI(Claude Code) worker에게 작업을 맡겨 만드는 스터디룸 예약 API입니다. 이 문서는 실행할 때마다 무엇이 실패했고 원인이 무엇이었으며 어떻게 고쳤는지를 기록합니다.
 
-- 엔진 버전: Harness_ `dev` `dd3b8f2` (2026-10-22)를 `harness/`로 복사 → 2026-10-25 `002046d`(F-01~F-11 수정) → 2026-10-27 `7651f7b`(F-13·F-15 수정)로 교체 → 2026-10-29 `d102fdd`(실패 원인 분류, 작업별 실패 메모, 환경 확인·복구, 알림, F-22·F-23 수정)
+- 엔진 버전: Harness_ `dev` `dd3b8f2` (2026-10-22)를 `harness/`로 복사 → 2026-10-25 `002046d`(F-01~F-11 수정) → 2026-10-27 `7651f7b`(F-13·F-15 수정)로 교체 → 2026-10-29 `d102fdd`(실패 원인 분류, 작업별 실패 메모, 환경 확인·복구, 알림, F-22·F-23 수정) → 2026-11-01 `626c025`(F-24·F-25 수정)
 - 환경: Windows 10, Windows PowerShell 5.1 + PowerShell 7.6, JDK 21 (Temurin), Docker 29.9, Claude Code 2.1.310 (구독)
 
 ## 0단계: 준비 (AI 호출 없음, 2026-10-24)
@@ -89,3 +89,15 @@
 - 엔진을 `d102fdd`로 교체(28개 파일, 엔진 `dev`와 blob 해시 일치 확인)
 - 프로필에 `environment` 선언: JDK 21(없으면 설치 안내와 함께 멈춤), Docker(설치 여부는 `docker --version`, 동작은 `docker info`, 꺼져 있으면 Docker Desktop 자동 시작 후 최대 180초 대기, 없으면 설치 안내와 함께 멈춤). 하네스 자체 도구(git, Claude CLI)는 엔진이 항상 먼저 확인
 - **실제 복구 실행에서 엔진 버그 발견(F-23):** Docker가 꺼진 상태에서 `harness.ps1 env -Repair`를 실행하자 Docker는 켜졌지만 명령이 7분 넘게 끝나지 않음. 하네스가 띄운 Docker Desktop이 하네스 출력 통로를 물려받아 잡고 있었음(10-27 Gradle daemon과 같은 종류). 실행 중에 같은 일이 생기면 run 전체가 멈췄을 문제 → 엔진에서 분리 실행 방식 수정(`bf8f066`) 후 Docker를 끄고 다시 실행: **7초 만에 Docker 시작, 명령 정상 종료, `environment: ready`**
+
+### 1-4. 작업 1 실행: 새 PC (2026-11-01 14:44, Windows 11)
+
+- 준비 중 발견(AI 호출 없음):
+  - 로컬 상태(작업 큐, 사용량, Git 승격 기록)는 Git에 없어 새 PC에서 비어 있음 → preflight가 `dev` merge 승인 기록 없음으로 실패(fail closed). 같은 커밋으로 이 PC에서 gate를 다시 통과시키고 승인을 재기록해 해결. 이전 PC의 시도 2회도 이 PC에는 없어 시도 0회에서 시작
+  - 사용자 PATH에 잘못된 항목(`\C:\...`, 따옴표)이 있어 Testcontainers가 `InvalidPathException`으로 실패 → PATH 정리 후 gate 통과
+  - Docker가 꺼져 있었지만 `env -Repair`가 Docker Desktop을 자동 시작
+- 실행: `run_seed_handoff.ps1`, 작업 1만 담은 계획, `-MaxWorkerAttempts 2`, `dev` 자동 반영 켬
+- 결과: **Claude는 성공**(17턴, 148초, 결과 success, 완료 보고에서 `gradlew test` 통과). 그러나 **하네스가 실패로 판정**하고 약 5분 만에 종료. 결과물은 작업 worktree에 커밋되지 않은 채 남음
+- 원인(엔진 버그 F-24): 로그에 쓰기 전 비밀값을 가리는 처리가, worker가 읽은 요구사항의 `tokenType: "Bearer"`(JSON 안에서는 `\"Bearer\"`)에서 따옴표 이스케이프 `\`를 지워 그 줄의 JSON을 깨뜨림 → 하네스가 Claude의 결과 이벤트를 읽지 못해 "결과 불명 = 실패"로 닫음. 같은 결함으로 `password: \"값\"` 형태는 가려지지도 않았음
+- 함께 발견(F-25): 예외로 끝난 실행은 Telegram 알림이 가지 않았음
+- 수정: 엔진 `14a9391`(dev `626c025`) — JSON을 깨지 않는 가림, 예외 종료 알림. 이 저장소 `harness/` 갱신
