@@ -86,6 +86,8 @@ Case unit 'messages name the stop kind and the next step, and long reasons are c
     Assert-True ($budget.Contains('비용 한도 도달') -and $budget.Contains('12 of 12') -and $budget.Contains('harness.ps1 usage')) "budget message wrong: $budget"
     $repeat=Format-HarnessStopNotification 'p' 'repeated_failure' 'task-1' ('x'*900) 'plan.md'
     Assert-True ($repeat.Contains('harness/state/failures/task-1.md') -and $repeat.Length -lt 800) 'repeat message wrong or too long'
+    $errorText=Format-HarnessStopNotification 'p' 'error' 'none' 'provider reported execution failure' 'plan.md'
+    Assert-True ($errorText.Contains('실행 오류로 중단') -and $errorText.Contains('provider reported execution failure') -and $errorText.Contains('dispatch summary')) "error message wrong: $errorText"
 }
 Case integration 'the notify command changes settings and a test message restores them' {
     $root=Join-Path $testRoot ('notify cli [safe] '+[Guid]::NewGuid().ToString('N'));$engine=Join-Path $root 'harness'

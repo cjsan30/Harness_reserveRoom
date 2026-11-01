@@ -1476,13 +1476,16 @@ $($resultLines -join [Environment]::NewLine)
 "@
     Write-Utf8File -Path $summaryFile -Content $summary
     Release-HarnessLock -LockPath $dispatchLock
-    if ($InvokeCodex -and -not $DryRun -and -not $PreflightOnly -and ($stopKind -ne "none" -or $overallStatus -eq "pass")) {
+    if ($InvokeCodex -and -not $DryRun -and -not $PreflightOnly) {
+        # Every live run ends with a notification: a classified stop, completion, or an
+        # unexpected error that ended the run without a stop kind (F-25).
         # A notification problem is reported but never changes the run result.
         try {
             $projectName = (Get-ProjectProfile -RootDir $rootDir).project.name
-            $notifyEvent = if ($stopKind -eq "budget") { "budget" } elseif ($stopKind -ne "none") { "stop" } else { "completion" }
-            $kind = if ($stopKind -ne "none") { $stopKind } else { "completion" }
-            $text = Format-HarnessStopNotification $projectName $kind $(if ($stopAssignmentId) { $stopAssignmentId } else { "none" }) $stopReason $relativePlanPath
+            $notifyEvent = if ($stopKind -eq "budget") { "budget" } elseif ($stopKind -ne "none" -or $overallStatus -ne "pass") { "stop" } else { "completion" }
+            $kind = if ($stopKind -ne "none") { $stopKind } elseif ($overallStatus -ne "pass") { "error" } else { "completion" }
+            $reasonText = if ($kind -eq "error") { $failureMessage } else { $stopReason }
+            $text = Format-HarnessStopNotification $projectName $kind $(if ($stopAssignmentId) { $stopAssignmentId } else { "none" }) $reasonText $relativePlanPath
             foreach ($sent in @(Send-HarnessNotification $rootDir $notifyEvent $text)) { Write-Output ("notification: {0} {1}" -f $sent.channel, $sent.status) }
         } catch {
             Write-Output ("warning: notification failed: " + (Protect-HarnessNotificationText $_.Exception.Message))

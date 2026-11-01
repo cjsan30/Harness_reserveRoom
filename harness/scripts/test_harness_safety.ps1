@@ -203,6 +203,22 @@ exit 1
             Assert-True ((Protect-HarnessSecretText '{"model":"m","max_tokens":null}') -ceq '{"model":"m","max_tokens":null}') 'null setting was altered'
         } finally { $env:FIXTURE_SERVICE_TOKEN = $previousEnvSecret }
     }
+    # Field finding F-24: a worker that read `tokenType: "Bearer"` in a requirements file
+    # produced a stream-json line whose masking dropped an escape and broke the JSON, so a
+    # successful provider run was judged a failure.
+    Test-Case 'masking keeps provider stream-json lines valid JSON' {
+        $text = "| POST | /api/auth/login | {accessToken, tokenType: `"Bearer`", expiresIn} |`r`npassword: `"fixture-escaped-secret`"`r`nDB_PASSWORD=fixture-plain-in-json, api_key='fixture-single-quoted'"
+        $event = [ordered]@{ type = 'user'; message = [ordered]@{ role = 'user'; content = @([ordered]@{ type = 'tool_result'; content = $text }) } }
+        $line = $event | ConvertTo-Json -Depth 8 -Compress
+        $masked = Protect-HarnessSecretText $line
+        $parsed = $null
+        try { $parsed = $masked | ConvertFrom-Json -ErrorAction Stop } catch { $parsed = $null }
+        Assert-True ($null -ne $parsed -and $parsed.type -eq 'user') "masking broke the JSON line: $masked"
+        foreach ($leak in @('fixture-escaped-secret', 'fixture-plain-in-json', 'fixture-single-quoted')) {
+            Assert-True (-not $masked.Contains($leak)) "secret survived masking: $masked"
+        }
+        Assert-True (([string]$parsed.message.content[0].content).Contains('/api/auth/login')) 'ordinary text was lost'
+    }
     Test-Case 'git gate logs mask credentials printed by the gate command' {
         $logPath = Join-Path $testRoot 'gate-mask.log'
         $result = Invoke-LoggedShellCommand -RootDir $fixture -CommandText 'git --version && echo token=fixture-gate-secret-value-42' -LogPath $logPath
