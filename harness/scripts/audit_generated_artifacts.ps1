@@ -81,6 +81,10 @@ function Test-HarnessGeneratedPath {
             "^harness/state/worktrees/",
             "^harness/state/git_workflow/",
             "^harness/state/notifications/",
+            "^harness/state/failures/",
+            "^harness/state/usage/",
+            "^harness/state/validation/",
+            "^harness/state/attempt_grants/",
             "^harness/assignments/[^/]+/(inbox|in_progress|done)/"
         )) {
         if ($normalized -match $pattern) {
@@ -171,6 +175,8 @@ if (-not (Test-Path -LiteralPath $gitIgnorePath)) {
             "harness/reports/generated_artifacts_audit.md",
             "harness/state/git_workflow/",
             "harness/state/worktrees/",
+            "harness/state/failures/",
+            "harness/state/attempt_grants/",
             "harness/assignments/*/inbox/*.md"
         )) {
         if ($gitIgnore -notmatch [Regex]::Escape($requiredEntry)) {
