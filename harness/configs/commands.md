@@ -85,6 +85,8 @@ worker exit requirements and snapshot scope. In a standalone target omit `harnes
 - reconcile a confirmed worker exit and its completion record
   - `pwsh -NoProfile -File harness/scripts/repair_assignment_state.ps1 -Agent <owner> -AssignmentId <id>`
   - unconfirmed exits remain blocked; this command does not kill processes or force requeue
+- operator decision: a confirmed-exit pass record that cannot be bound to execution evidence (e.g. the provider result is failed) becomes a failure so resume can retry it; never a pass
+  - `pwsh -NoProfile -File harness/scripts/repair_assignment_state.ps1 -Agent <owner> -AssignmentId <id> -MarkFailed -Reason "<why>"`
 - Linux/macOS setup
   - `sh harness/scripts/setup_portable_runtime.sh`
 - portable platform smoke

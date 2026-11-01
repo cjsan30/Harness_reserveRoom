@@ -1,5 +1,7 @@
 ﻿param([string]$OutputDirectory='')
 $ErrorActionPreference='Stop'
+# Tests never send real notifications: drop the operator's notification secrets (F-26).
+foreach ($harnessNotifySecret in @('HARNESS_TELEGRAM_BOT_TOKEN', 'HARNESS_TELEGRAM_CHAT_ID', 'HARNESS_DISCORD_WEBHOOK_URL', 'HARNESS_NOTIFY_PROVIDER')) { [Environment]::SetEnvironmentVariable($harnessNotifySecret, $null, 'Process') }
 . (Join-Path $PSScriptRoot 'harness_common.ps1')
 $source=Split-Path -Parent $PSScriptRoot
 if(-not $OutputDirectory){$OutputDirectory=Join-Path $source '.test-output'}
@@ -80,6 +82,20 @@ Case security 'a bad Discord URL fails alone without leaking it' {
     $discord=@($sent|Where-Object{$_.channel -eq 'discord'})[0];$telegram=@($sent|Where-Object{$_.channel -eq 'telegram'})[0]
     Assert-True ($discord.status -eq 'failed' -and $telegram.status -eq 'sent') 'one channel failure blocked the other or was accepted'
     Assert-True (-not ($sent|ConvertTo-Json -Depth 4).Contains('secret-path-value')) 'URL leaked in the result'
+}
+Case security 'test suites never inherit real notification secrets' {
+    # Field finding F-26: with real Telegram secrets in the environment, fixture preflight
+    # failures in the regression were sent to the operator's phone.
+    $missing=@(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'test_*.ps1' -File | Where-Object { -not ([IO.File]::ReadAllText($_.FullName)).Contains("SetEnvironmentVariable(`$harnessNotifySecret, `$null, 'Process')") } | ForEach-Object { $_.Name })
+    Assert-True ($missing.Count -eq 0) "test suites without the notification guard: $($missing -join ', ')"
+    $child=Join-Path $testRoot ('guard '+[Guid]::NewGuid().ToString('N')+'.ps1')
+    Write-Utf8File $child ("`$ErrorActionPreference = 'Stop'`n"+([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test_notifications.ps1')) -split "`n" | Where-Object { $_ -match 'harnessNotifySecret' } | Select-Object -First 1)+"`nWrite-Output ([bool]`$env:HARNESS_TELEGRAM_BOT_TOKEN)")
+    $saved=$env:HARNESS_TELEGRAM_BOT_TOKEN
+    try{
+        $env:HARNESS_TELEGRAM_BOT_TOKEN='123456:fixture-real-looking-token'
+        $r=Invoke-HarnessPowerShellFile -FilePath $child -AllowFailure
+        Assert-True ($r.Success -and $r.Output.Trim() -eq 'False') "guard left the secret: $($r.Output)"
+    }finally{$env:HARNESS_TELEGRAM_BOT_TOKEN=$saved}
 }
 Case unit 'messages name the stop kind and the next step, and long reasons are cut' {
     $budget=Format-HarnessStopNotification 'p' 'budget' 'task-1' 'execution budget reached: max_invocations (12 of 12 invocations used)' 'plan.md'

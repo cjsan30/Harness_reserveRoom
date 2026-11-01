@@ -1,6 +1,8 @@
 param([string]$OutputDirectory = "")
 
 $ErrorActionPreference = 'Stop'
+# Tests never send real notifications: drop the operator's notification secrets (F-26).
+foreach ($harnessNotifySecret in @('HARNESS_TELEGRAM_BOT_TOKEN', 'HARNESS_TELEGRAM_CHAT_ID', 'HARNESS_DISCORD_WEBHOOK_URL', 'HARNESS_NOTIFY_PROVIDER')) { [Environment]::SetEnvironmentVariable($harnessNotifySecret, $null, 'Process') }
 . (Join-Path $PSScriptRoot 'harness_common.ps1')
 . (Join-Path $PSScriptRoot 'git_workflow_common.ps1')
 $engineRoot = Split-Path -Parent $PSScriptRoot

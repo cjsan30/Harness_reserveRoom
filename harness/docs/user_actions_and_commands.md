@@ -441,6 +441,8 @@ Linux/macOS shell wrappers and Git hooks automatically put PowerShell runtime ca
 
 설치된 대상 루트에서 `pwsh -NoProfile -File harness/scripts/repair_assignment_state.ps1 -Agent <owner>`로 중단된 큐 이동을 조정합니다. 확인된 worker 종료까지 반영하려면 `-AssignmentId <id>`를 추가합니다. 실행 중이거나 종료 여부가 불명확한 worker는 자동으로 재배정하지 않습니다. 이 명령은 프로세스를 죽이지 않습니다.
 
+완료 기록은 pass인데 실행 증거와 결합되지 않는 경우(예: provider 결과가 failed)에는 기본적으로 정리를 거부합니다. 운영자가 확인한 뒤 `-MarkFailed -Reason "<이유>"`를 붙이면 그 기록을 **실패**로 바꿔 `resume`이 재시도할 수 있게 합니다. 성공으로 바꾸는 방법은 없으며, 시도 횟수와 사용량 기록은 그대로입니다(2026-11-01).
+
 개발 루트의 자체 검증은 `pwsh -NoProfile -File scripts/test_harness.ps1`이며 새 복구 테스트만 실행하려면 `scripts/test_harness_recovery.ps1`을 사용합니다. CLI 위치를 명시할 때는 `HARNESS_CODEX_PATH`를 사용하고, 테스트 fake 경로를 운영 환경에 남기지 않습니다. 자세한 절차와 제한은 [복구 설계](recovery_design.md)를 확인하세요.
 
 # 실행 사용량 조회 추가 (2026-10-15)
