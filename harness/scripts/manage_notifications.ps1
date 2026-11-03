@@ -13,6 +13,9 @@
     [int]$WaitHours = 0,
     # Sends a real message to every configured channel.
     [switch]$Test,
+    # Explains why messages would not arrive: secrets, switches, a live bot/chat check
+    # (no message is sent) and the latest log entries.
+    [switch]$Check,
     [switch]$Json
 )
 $ErrorActionPreference = 'Stop'
@@ -50,11 +53,44 @@ if ($Test) {
         if ($null -eq $original) { Remove-Item -LiteralPath $path -Force } else { Write-Utf8File $path $original }
     }
 }
+$checkReport = $null
+if ($Check) {
+    $problems = New-Object 'System.Collections.Generic.List[string]'
+    if (@('1','true','yes','on') -contains ([string]$env:HARNESS_NOTIFY_DISABLED).Trim().ToLowerInvariant()) { $problems.Add('HARNESS_NOTIFY_DISABLED is set: nothing is sent') | Out-Null }
+    if (-not [string]::IsNullOrWhiteSpace($env:HARNESS_NOTIFY_CAPTURE_FILE)) { $problems.Add('HARNESS_NOTIFY_CAPTURE_FILE is set: messages go to a file, not the network') | Out-Null }
+    if (-not ($settings.channels.telegram -or $settings.channels.discord)) { $problems.Add('no channel is enabled') | Out-Null }
+    foreach ($name in @('telegram','discord')) { if ($settings.channels.$name) { $reason = Get-HarnessMissingSecretReason $name; if ($reason) { $problems.Add($reason) | Out-Null } } }
+    foreach ($eventName in @('stop','budget','completion')) { if (-not $settings.events.$eventName) { $problems.Add("the '$eventName' event is off") | Out-Null } }
+    $live = New-Object 'System.Collections.Generic.List[string]'
+    if ($settings.channels.telegram -and -not (Get-HarnessMissingSecretReason 'telegram') -and [string]::IsNullOrWhiteSpace($env:HARNESS_NOTIFY_CAPTURE_FILE)) {
+        # getMe and getChat read the bot and chat without sending anything.
+        $api = 'https://api.telegram.org/bot' + $env:HARNESS_TELEGRAM_BOT_TOKEN
+        try { $me = Invoke-RestMethod -Method Get -Uri ($api + '/getMe') -TimeoutSec 15; $live.Add("telegram bot: ok (@$($me.result.username))") | Out-Null }
+        catch { $detail = Get-HarnessNotificationFailureDetail 'telegram' $_; $live.Add("telegram bot: failed - $detail") | Out-Null; $problems.Add("telegram bot check failed") | Out-Null }
+        try { $null = Invoke-RestMethod -Method Get -Uri ($api + '/getChat?chat_id=' + [Uri]::EscapeDataString($env:HARNESS_TELEGRAM_CHAT_ID)) -TimeoutSec 15; $live.Add('telegram chat: ok') | Out-Null }
+        catch { $detail = Get-HarnessNotificationFailureDetail 'telegram' $_; $live.Add("telegram chat: failed - $detail") | Out-Null; $problems.Add("telegram chat check failed") | Out-Null }
+    }
+    $recent = @()
+    $logPath = Get-HarnessConfiguredPath -RootDir $root -Name 'notification_log' -FallbackRelativePath 'harness/reports/notifications_log.md'
+    if (Test-Path -LiteralPath $logPath) {
+        $entries = @(([IO.File]::ReadAllText($logPath) -split '(?m)^- time: ') | Select-Object -Skip 1)
+        $recent = @($entries | Select-Object -Last 3 | ForEach-Object {
+            $lines = $_ -split '\r?\n'
+            $value = { param($key) $line = @($lines | Where-Object { $_ -match "^\s+- ${key}: " } | Select-Object -First 1); if ($line.Count) { ($line[0] -replace "^\s+- ${key}: ", '').Trim() } else { '' } }
+            [pscustomobject]@{ time = $lines[0].Trim(); channel = (& $value 'provider'); status = (& $value 'status'); detail = (& $value 'detail') }
+        })
+    }
+    $decisionPath = Join-Path (Get-HarnessConfiguredPath -RootDir $root -Name 'notification_state' -FallbackRelativePath 'harness/state/notifications') 'last_status_decision.json'
+    $statusDecision = $null
+    if (Test-Path -LiteralPath $decisionPath) { try { $statusDecision = [IO.File]::ReadAllText($decisionPath) | ConvertFrom-Json } catch { $statusDecision = $null } }
+    $checkReport = [pscustomobject]@{ ready = ($problems.Count -eq 0); problems = $problems.ToArray(); live = $live.ToArray(); recent = $recent; last_status_decision = $statusDecision }
+}
 $report = [pscustomobject]@{
     settings = $settings
     configured_channels = $targets
     missing_secrets = @(@('telegram','discord') | Where-Object { $settings.channels.$_ -and $targets -notcontains $_ })
     test = $sent
+    check = $checkReport
 }
 if ($Json) { $report | ConvertTo-Json -Depth 6; exit 0 }
 Write-Output ("channels: telegram={0} discord={1} (ready: {2})" -f $settings.channels.telegram, $settings.channels.discord, $(if ($targets.Count) { $targets -join ', ' } else { 'none' }))
@@ -66,3 +102,11 @@ Write-Output ("events: stop={0} budget={1} completion={2}" -f $settings.events.s
 Write-Output ("quiet hours: {0} {1}-{2} (messages arrive without sound)" -f $(if ($settings.quiet_hours.enabled) { 'on' } else { 'off' }), $settings.quiet_hours.start, $settings.quiet_hours.end)
 Write-Output ("reminders while waiting: every {0} min, up to {1}, wait limit {2} h" -f $settings.reminder.interval_minutes, $settings.reminder.max_count, $settings.reminder.wait_limit_hours)
 foreach ($result in $sent) { Write-Output ("test {0}: {1} {2}" -f $result.channel, $result.status, $result.detail) }
+if ($null -ne $checkReport) {
+    Write-Output ("check: {0}" -f $(if ($checkReport.ready) { 'ready' } else { 'problems found' }))
+    foreach ($problem in $checkReport.problems) { Write-Output "  problem: $problem" }
+    foreach ($line in $checkReport.live) { Write-Output "  $line" }
+    if ($checkReport.recent.Count -eq 0) { Write-Output '  recent log: none' }
+    foreach ($entry in $checkReport.recent) { Write-Output ("  recent log: {0} {1} {2} {3}" -f $entry.time, $entry.channel, $entry.status, $entry.detail) }
+    if ($null -ne $checkReport.last_status_decision) { Write-Output ("  last status notification: {0} - {1} ({2})" -f $checkReport.last_status_decision.decision, $checkReport.last_status_decision.reason, $checkReport.last_status_decision.decided_at) }
+}

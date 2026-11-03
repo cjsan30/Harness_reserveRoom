@@ -62,18 +62,29 @@ Case integration 'a stop is sent to every configured channel, silently during qu
     $null=Send-HarnessNotification $root 'stop' $text ([DateTime]'2026-10-28 12:00')
     Assert-True (-not @(Captured $capture)[2].silent) 'daytime message was silent'
 }
-Case integration 'disabled events, channels without secrets and the kill switch send nothing' {
+Case integration 'disabled events, channels without secrets and the kill switch send nothing and say why' {
     $root=Fixture;$capture=Join-Path $root 'capture.jsonl'
+    function Skipped($Results,[string]$Pattern){$r=@($Results);return ($r.Count -ge 1 -and @($r|Where-Object{$_.status -ne 'skipped'}).Count -eq 0 -and @($r|Where-Object{$_.detail -match $Pattern}).Count -ge 1)}
     Use-Env @{HARNESS_TELEGRAM_BOT_TOKEN=$fakeToken;HARNESS_NOTIFY_CAPTURE_FILE=$capture}
-    Assert-True (@(Send-HarnessNotification $root 'stop' 'x').Count -eq 0) 'telegram without chat id was used'
+    Assert-True (Skipped (Send-HarnessNotification $root 'stop' 'x') 'HARNESS_TELEGRAM_CHAT_ID') 'telegram without chat id was used or not explained'
     Use-Env @{HARNESS_TELEGRAM_BOT_TOKEN=$fakeToken;HARNESS_TELEGRAM_CHAT_ID='42';HARNESS_NOTIFY_CAPTURE_FILE=$capture}
-    Assert-True (@(Send-HarnessNotification $root 'completion' 'x').Count -eq 0) 'completion sent while disabled by default'
-    $s=Get-HarnessNotificationSettings $root;$s.channels.telegram=$false;Save-HarnessNotificationSettings $root $s
-    Assert-True (@(Send-HarnessNotification $root 'stop' 'x').Count -eq 0) 'disabled channel was used'
+    Assert-True (Skipped (Send-HarnessNotification $root 'completion' 'x') 'notify -OnCompletion on') 'completion sent while disabled by default or not explained'
+    $s=Get-HarnessNotificationSettings $root;$s.channels.telegram=$false;$s.channels.discord=$false;Save-HarnessNotificationSettings $root $s
+    Assert-True (Skipped (Send-HarnessNotification $root 'stop' 'x') 'no notification channel') 'disabled channel was used or not explained'
     $s.channels.telegram=$true;Save-HarnessNotificationSettings $root $s
     Use-Env @{HARNESS_TELEGRAM_BOT_TOKEN=$fakeToken;HARNESS_TELEGRAM_CHAT_ID='42';HARNESS_NOTIFY_CAPTURE_FILE=$capture;HARNESS_NOTIFY_DISABLED='true'}
-    Assert-True (@(Send-HarnessNotification $root 'stop' 'x').Count -eq 0 -and @(Captured $capture).Count -eq 0) 'kill switch ignored'
+    Assert-True ((Skipped (Send-HarnessNotification $root 'stop' 'x') 'HARNESS_NOTIFY_DISABLED') -and @(Captured $capture).Count -eq 0) 'kill switch ignored or not explained'
+    $log=[IO.File]::ReadAllText((Join-Path $root 'harness/reports/notifications_log.md'))
+    Assert-True (([regex]::Matches($log,'status: skipped')).Count -ge 4 -and -not $log.Contains($fakeToken)) "skips were not logged: $log"
     Reject {Send-HarnessNotification $root 'anything' 'x'}
+}
+Case unit 'delivery failures name the likely cause' {
+    Assert-True ((Get-HarnessNotificationFailureHint 'telegram' 401 '').Contains('HARNESS_TELEGRAM_BOT_TOKEN')) 'bad token not named'
+    Assert-True ((Get-HarnessNotificationFailureHint 'telegram' 400 '{"ok":false,"description":"Bad Request: chat not found"}').Contains('/start')) 'unknown chat not named'
+    Assert-True ((Get-HarnessNotificationFailureHint 'telegram' 403 'Forbidden: bot was blocked by the user').Contains('blocked')) 'blocked bot not named'
+    Assert-True ((Get-HarnessNotificationFailureHint 'telegram' 429 '').Contains('rate limited')) 'rate limit not named'
+    Assert-True ((Get-HarnessNotificationFailureHint 'telegram' $null '').StartsWith('network problem')) 'network failure not named'
+    Assert-True ((Get-HarnessNotificationFailureHint 'discord' 404 '').Contains('webhook')) 'deleted webhook not named'
 }
 Case security 'a bad Discord URL fails alone without leaking it' {
     $root=Fixture;$capture=Join-Path $root 'capture.jsonl'
@@ -112,6 +123,19 @@ Case unit 'messages are short Korean templates: known reasons are translated, un
     $unknown=ConvertTo-HarnessKoreanReason ('zzz '+('y'*300))
     Assert-True ($unknown.StartsWith('분류되지 않은 오류: zzz') -and $unknown.Length -lt 130) "unknown reason not cut: $unknown"
 }
+Case integration 'status-change notification records why it was not sent' {
+    $root=Join-Path $testRoot ('notify decision [safe] '+[Guid]::NewGuid().ToString('N'));$engine=Join-Path $root 'harness'
+    Ensure-HarnessDirectory $engine
+    foreach($dir in @('scripts','configs')){Copy-Item -LiteralPath (Join-Path $source $dir) -Destination (Join-Path $engine $dir) -Recurse}
+    Write-Utf8File (Join-Path $engine 'project/configs/project_profile.json') '{"project":{"name":"decision-project"}}'
+    Write-Utf8File (Join-Path $engine 'reports/status.json') '{"status":"seed_failed","phase":"seed_handoff","user_action_required":true,"failure":{"type":"unknown","message":"x"}}'
+    Use-Env @{}
+    $old=$env:CODEX_HARNESS_ROOT
+    try{$env:CODEX_HARNESS_ROOT=$root;$r=Invoke-HarnessPowerShellFile -FilePath (Join-Path $engine 'scripts/send_harness_notification.ps1') -Arguments @('-Quiet') -AllowFailure}finally{$env:CODEX_HARNESS_ROOT=$old}
+    $decision=[IO.File]::ReadAllText((Join-Path $engine 'state/notifications/last_status_decision.json'))|ConvertFrom-Json
+    $log=[IO.File]::ReadAllText((Join-Path $engine 'reports/notifications_log.md'))
+    Assert-True ($r.Success -and $decision.decision -eq 'skipped' -and $decision.reason.Contains('provider not configured') -and $log.Contains('status: skipped')) "decision not recorded: $($r.Output)"
+}
 Case integration 'status-change notification is a short Korean message' {
     $root=Join-Path $testRoot ('notify status [safe] '+[Guid]::NewGuid().ToString('N'));$engine=Join-Path $root 'harness'
     Ensure-HarnessDirectory $engine
@@ -143,6 +167,9 @@ Case integration 'the notify command changes settings and a test message restore
         $t=Invoke-HarnessPowerShellFile (Join-Path $engine 'scripts/manage_notifications.ps1') @('-Test') -AllowFailure
         Assert-True ($t.Success -and @(Captured $capture).Count -eq 1 -and @(Captured $capture)[0].text.Contains('알림 테스트')) "test not sent: $($t.Output)"
         Assert-True (-not (Get-HarnessNotificationSettings $root).events.stop) 'test message left the stop event enabled'
+        # -Check explains without sending; capture mode skips the live bot check (no network in tests).
+        $c=Invoke-HarnessPowerShellFile (Join-Path $engine 'scripts/manage_notifications.ps1') @('-Check') -AllowFailure
+        Assert-True ($c.Success -and $c.Output.Contains('check: problems found') -and $c.Output.Contains('HARNESS_NOTIFY_CAPTURE_FILE is set') -and $c.Output.Contains("the 'stop' event is off") -and $c.Output.Contains('recent log:') -and @(Captured $capture).Count -eq 1) "check output wrong: $($c.Output)"
         $bad=Invoke-HarnessPowerShellFile (Join-Path $engine 'scripts/manage_notifications.ps1') @('-QuietStart','25:00') -AllowFailure
         Assert-True (-not $bad.Success -and (Get-HarnessNotificationSettings $root).quiet_hours.start -eq '22:00') 'invalid time saved'
     }finally{$env:CODEX_HARNESS_ROOT=$old}

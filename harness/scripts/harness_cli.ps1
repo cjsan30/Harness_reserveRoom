@@ -7,13 +7,13 @@ function Get-HarnessCliRequest([object[]]$Tokens) {
         help=@();init=@('ProjectName','Requirements','RequirementsFile','Language','Runtime','Framework','Ide','ApplicationType','Force','ListPresets')
         doctor=@();status=@();usage=@();test=@('SyntaxOnly')
         attempts=@('AssignmentId','Grant','Reason');env=@('Repair')
-        notify=@('Telegram','Discord','OnStop','OnBudget','OnCompletion','QuietHours','QuietStart','QuietEnd','ReminderMinutes','ReminderCount','WaitHours','Test')
+        notify=@('Telegram','Discord','OnStop','OnBudget','OnCompletion','QuietHours','QuietStart','QuietEnd','ReminderMinutes','ReminderCount','WaitHours','Test','Check')
         dashboard=@('Port','RefreshSeconds','PythonExecutable','NoOpen','Snapshot')
         run=@('PlanFile','Model','MaxWorkerAttempts','StaleAfterSeconds','DryRun','PreflightOnly','Ephemeral','StopOnWorkerFailure','SkipAutoAdvanceGit')
         resume=@('PlanFile','StaleAfterSeconds','Execute','Model','MaxWorkerAttempts','DryRun','PreflightOnly','Ephemeral','StopOnWorkerFailure','SkipAutoAdvanceGit')
     }
     if(-not $schemas.ContainsKey($command)){throw 'unknown command; use help'}
-    $switches=@('Test','Repair','Json','Preview','Force','ListPresets','SyntaxOnly','Execute','DryRun','PreflightOnly','Ephemeral','StopOnWorkerFailure','SkipAutoAdvanceGit','NoOpen','Snapshot')
+    $switches=@('Test','Check','Repair','Json','Preview','Force','ListPresets','SyntaxOnly','Execute','DryRun','PreflightOnly','Ephemeral','StopOnWorkerFailure','SkipAutoAdvanceGit','NoOpen','Snapshot')
     $allowed=@('Root','Json','Preview')+$schemas[$command];$options=@{}
     for($i=$offset;$i -lt $Tokens.Count;$i++){
         $token=[string]$Tokens[$i]
@@ -143,6 +143,7 @@ Nested layout: use harness/scripts/harness.ps1 from the target repository.
   notify   Show or change notification settings (local, no secrets): -Telegram/-Discord on|off
            -OnStop/-OnBudget/-OnCompletion on|off -QuietHours on|off -QuietStart/-QuietEnd HH:mm
            -ReminderMinutes -ReminderCount -WaitHours; -Test sends a real test message
+           -Check explains why messages would not arrive (secrets, switches, bot/chat, recent log)
   attempts Show an assignment's counted attempts: -AssignmentId <id>
            -Grant 1..10 -Reason <text> records extra attempts for that assignment
   dashboard Start a local read-only web monitor; Ctrl+C stops the server
