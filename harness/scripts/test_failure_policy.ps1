@@ -80,6 +80,13 @@ Case unit 'permission denials stop without counting and name the denied command'
     Assert-True ($c.class -eq 'permission' -and -not $c.counts_toward_assignment_limit -and ($c.details -join ' ').Contains('./gradlew test')) "wrong: $($c|ConvertTo-Json -Compress)"
     Assert-True ((Get-HarnessFailureDecision $c ([pscustomobject]@{attempts=@()})).action -eq 'stop_needs_operator') 'permission did not stop'
 }
+Case unit 'a refused completion record outranks incidental permission denials' {
+    $root=Fixture
+    $tool='{"type":"user","message":{"content":[{"type":"tool_result","content":"Exception: completion has no unique execution evidence; validation required"}]}}'
+    $c=Classify $root (Worker) ($tool+"`n"+$denied)
+    Assert-True ($c.class -eq 'environment' -and $c.kind -eq 'harness-completion-rejected' -and -not $c.counts_toward_assignment_limit -and ($c.details -join ' ').Contains('./gradlew test')) "wrong: $($c|ConvertTo-Json -Compress)"
+    Assert-True ((Get-HarnessFailureDecision $c ([pscustomobject]@{attempts=@()})).action -eq 'stop_needs_operator') 'refused completion did not stop for an operator'
+}
 Case unit 'provider usage limit stops as a budget stop and outages are retried' {
     $root=Fixture
     $limit=Classify $root (Worker -Extra @{provider_result=[pscustomobject]@{error_kind='provider_error'}}) (ErrorResult 'Claude AI usage limit reached, resets 3pm')

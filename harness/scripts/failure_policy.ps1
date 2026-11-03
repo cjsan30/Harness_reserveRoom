@@ -198,6 +198,13 @@ function Get-HarnessAttemptClassification($Catalog, $Facts) {
         }
         return New-HarnessFailureClassification 'implementation' 'timeout' 'worker was still working when max_invocation_seconds was reached' $null (Get-HarnessFailureSignature '' 'timeout')
     }
+    # The harness refusing the completion record is the cause even when the worker also hit
+    # denials (for example reading outside its worktree while investigating that refusal).
+    # The class still stops for an operator, so a worker printing this text gains no retry.
+    $rejection = Find-HarnessKnownError @($Catalog | Where-Object { $_.id -ceq 'harness-completion-rejected' }) 'worker' $Facts.worker_log @('environment')
+    if ($null -ne $rejection) {
+        return New-HarnessFailureClassification 'environment' $rejection.id $rejection.note $rejection $null @($Facts.permission_denials)
+    }
     if (@($Facts.permission_denials).Count -gt 0) {
         return New-HarnessFailureClassification 'permission' 'denied' 'the provider denied tool use that the worker needed; review the allowed commands' $null $null @($Facts.permission_denials)
     }

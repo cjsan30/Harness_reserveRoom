@@ -57,8 +57,8 @@
 | 분류 | 판별 근거 | dispatcher 처리 | 작업당 시도에 포함 |
 | --- | --- | --- | --- |
 | implementation | 검증이 돌았는데 실패, 검증 없이 종료, 작업 중 timeout, turn 소진 | 재시도. 직전 구현 실패와 signature가 같으면 즉시 멈춤(`repeated_failure`) | 예 |
-| environment | 목록의 환경 문구(Docker, 도구 없음, JDK, 포트, 네트워크), 출력 없이 5분 이상 멈춘 뒤 timeout | 멈춤(`needs_operator`) | 아니오 |
-| permission | provider가 거부한 도구 사용(`permission_denials`) | 멈춤. 거부된 명령을 기록 | 아니오 |
+| environment | 목록의 환경 문구(Docker, 도구 없음, JDK, 포트, 네트워크), 출력 없이 5분 이상 멈춘 뒤 timeout, 하네스가 완료 기록을 거부함(`harness-completion-rejected`, 작업 상태 불일치) | 멈춤(`needs_operator`) | 아니오 |
+| permission | provider가 거부한 도구 사용(`permission_denials`). 단, 하네스의 완료 거부가 worker 로그에 있으면 그쪽이 원인이고 거부 목록은 details에만 남김 | 멈춤. 거부된 명령을 기록 | 아니오 |
 | provider | provider 오류 결과의 문구: 사용량 한도, 인증, rate limit, 과부하 | rate limit·과부하는 대기 후 최대 2회 재시도(run의 시도를 쓰지 않음). 사용량 한도는 `budget` 멈춤. 인증·기타는 멈춤 | 아니오 |
 | needs_input | worker 최종 메시지의 `HARNESS_NEEDS_INPUT: <무엇이 없는지>` | 멈춤 | 아니오 |
 
