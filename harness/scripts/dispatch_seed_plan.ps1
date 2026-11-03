@@ -1490,7 +1490,7 @@ $($resultLines -join [Environment]::NewLine)
             $kind = if ($stopKind -ne "none") { $stopKind } elseif ($overallStatus -ne "pass") { "error" } else { "completion" }
             $reasonText = if ($kind -eq "error") { $failureMessage } else { $stopReason }
             $text = Format-HarnessStopNotification $projectName $kind $(if ($stopAssignmentId) { $stopAssignmentId } else { "none" }) $reasonText $relativePlanPath
-            foreach ($sent in @(Send-HarnessNotification $rootDir $notifyEvent $text)) { Write-Output ("notification: {0} {1}" -f $sent.channel, $sent.status) }
+            foreach ($sent in @(Send-HarnessNotification $rootDir $notifyEvent $text)) { Write-Output ("notification: {0} {1}{2}" -f $sent.channel, $sent.status, $(if ($sent.status -ne 'sent' -and $sent.detail) { " (" + $sent.detail + ")" } else { "" })) }
         } catch {
             Write-Output ("warning: notification failed: " + (Protect-HarnessNotificationText $_.Exception.Message))
         }

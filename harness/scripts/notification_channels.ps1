@@ -94,24 +94,92 @@ function Send-HarnessNotificationToChannel([string]$Channel, [string]$Text, [boo
     Invoke-RestMethod -Method Post -Uri $url -Body $bytes -ContentType 'application/json; charset=utf-8' -TimeoutSec 15 | Out-Null
 }
 
+function Write-HarnessNotificationLog([string]$RootDir, [string]$Channel, [string]$EventName, [string]$Status, [bool]$Silent, [string]$Detail) {
+    $logPath = Get-HarnessConfiguredPath -RootDir $RootDir -Name 'notification_log' -FallbackRelativePath 'harness/reports/notifications_log.md'
+    if (-not (Test-Path -LiteralPath $logPath)) { Write-Utf8File $logPath "# Notification Log`n`n## Entries`n" }
+    Append-Utf8File $logPath ("- time: {0}`n  - provider: {1}`n  - event: {2}`n  - status: {3}`n  - silent: {4}`n  - detail: {5}`n" -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'), $Channel, $EventName, $Status, ([string]$Silent).ToLowerInvariant(), $(if ($Detail) { Protect-HarnessNotificationText $Detail } else { 'none' }))
+}
+
+function Get-HarnessNotificationSecretNames([string]$Channel) {
+    if ($Channel -eq 'telegram') { return @('HARNESS_TELEGRAM_BOT_TOKEN', 'HARNESS_TELEGRAM_CHAT_ID') }
+    return @('HARNESS_DISCORD_WEBHOOK_URL')
+}
+
+function Get-HarnessMissingSecretReason([string]$Channel) {
+    # Names only, never values. A variable saved for the user but absent here means the
+    # terminal or app that started the harness was opened before the variable was set.
+    $missing = @(Get-HarnessNotificationSecretNames $Channel | Where-Object { [string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($_, 'Process')) })
+    if ($missing.Count -eq 0) { return '' }
+    $userOnly = @()
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { $userOnly = @($missing | Where-Object { -not [string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($_, 'User')) }) }
+    if ($userOnly.Count -eq $missing.Count) { return "$Channel is enabled but $($missing -join ', ') is saved for the user and not visible to this process; restart the terminal or app that runs the harness" }
+    return "$Channel is enabled but $($missing -join ', ') is not set"
+}
+
+function Get-HarnessNotificationFailureHint([string]$Channel, $StatusCode, [string]$Body) {
+    $code = 0
+    if ($null -ne $StatusCode) { [void][int]::TryParse(([string][int]$StatusCode), [ref]$code) }
+    if ($code -eq 0) { return 'network problem: the service could not be reached (offline, firewall, proxy or timeout)' }
+    if ($code -eq 429) { return 'rate limited by the service; it will accept messages again later' }
+    if ($Channel -eq 'telegram') {
+        if ($code -eq 401 -or $code -eq 404) { return 'Telegram rejected the bot token; check HARNESS_TELEGRAM_BOT_TOKEN' }
+        if ($code -eq 400 -and $Body -match '(?i)chat not found') { return 'Telegram does not know this chat; check HARNESS_TELEGRAM_CHAT_ID and send /start to the bot' }
+        if ($code -eq 403) { return 'the bot cannot write to this chat (blocked or never started); send /start to the bot' }
+    } elseif ($code -eq 401 -or $code -eq 404) {
+        return 'Discord rejected the webhook (deleted or wrong); create a new webhook URL'
+    }
+    return "the service refused the message (HTTP $code)"
+}
+
+function Get-HarnessNotificationFailureDetail([string]$Channel, $ErrorRecord) {
+    $statusCode = $null
+    try { if ($null -ne $ErrorRecord.Exception.Response) { $statusCode = $ErrorRecord.Exception.Response.StatusCode } } catch { $statusCode = $null }
+    $body = ''
+    if ($null -ne $ErrorRecord.ErrorDetails -and $ErrorRecord.ErrorDetails.Message) { $body = [string]$ErrorRecord.ErrorDetails.Message }
+    $raw = if ($body) { $body } else { [string]$ErrorRecord.Exception.Message }
+    $raw = ($raw -replace '\s+', ' ').Trim()
+    if ($raw.Length -gt 200) { $raw = $raw.Substring(0, 200) + '...' }
+    if ($null -eq $statusCode -and $raw -match 'is not a Discord webhook URL') { return Protect-HarnessNotificationText $raw }
+    return Protect-HarnessNotificationText ((Get-HarnessNotificationFailureHint $Channel $statusCode $body) + ' (' + $raw + ')')
+}
+
 function Send-HarnessNotification([string]$RootDir, [string]$EventName, [string]$Text, $Now = $null) {
+    # Every call leaves a result and a log line, including the reason when nothing was
+    # sent, so "why did no message arrive" can always be answered from the log.
     if ($EventName -cnotin $script:HarnessNotificationEvents) { throw "unknown notification event: $EventName" }
     $results = New-Object 'System.Collections.Generic.List[object]'
-    if (@('1','true','yes','on') -contains ([string]$env:HARNESS_NOTIFY_DISABLED).Trim().ToLowerInvariant()) { return $results.ToArray() }
+    $skip = {
+        param([string]$Channel, [string]$Reason)
+        $results.Add([pscustomobject]@{ channel = $Channel; status = 'skipped'; silent = $false; detail = $Reason }) | Out-Null
+        Write-HarnessNotificationLog $RootDir $Channel $EventName 'skipped' $false $Reason
+    }
+    if (@('1','true','yes','on') -contains ([string]$env:HARNESS_NOTIFY_DISABLED).Trim().ToLowerInvariant()) {
+        & $skip 'all' 'HARNESS_NOTIFY_DISABLED is set; unset it to send notifications'
+        return $results.ToArray()
+    }
     $settings = Get-HarnessNotificationSettings $RootDir
-    if (-not $settings.events.$EventName) { return $results.ToArray() }
+    if (-not $settings.events.$EventName) {
+        $switch = @{ stop = 'OnStop'; budget = 'OnBudget'; completion = 'OnCompletion' }[$EventName]
+        & $skip 'all' "the '$EventName' event is off; turn it on with: harness.ps1 notify -$switch on"
+        return $results.ToArray()
+    }
     if ($null -eq $Now) { $Now = Get-Date }
     $silent = Test-HarnessQuietTime $settings ([DateTime]$Now)
     $message = Protect-HarnessNotificationText $Text
     if ($message.Length -gt 1900) { $message = $message.Substring(0, 1900) + "`n[truncated]" }
-    foreach ($channel in @(Get-HarnessNotificationTargets $settings)) {
+    $enabled = @($script:HarnessNotificationChannels | Where-Object { $settings.channels.$_ })
+    if ($enabled.Count -eq 0) {
+        & $skip 'all' 'no notification channel is enabled; turn one on with: harness.ps1 notify -Telegram on'
+        return $results.ToArray()
+    }
+    foreach ($channel in $enabled) {
+        $missing = Get-HarnessMissingSecretReason $channel
+        if ($missing) { & $skip $channel $missing; continue }
         $status = 'sent'; $detail = ''
         try { Send-HarnessNotificationToChannel $channel $message $silent }
-        catch { $status = 'failed'; $detail = Protect-HarnessNotificationText $_.Exception.Message }
+        catch { $status = 'failed'; $detail = Get-HarnessNotificationFailureDetail $channel $_ }
         $results.Add([pscustomobject]@{ channel = $channel; status = $status; silent = $silent; detail = $detail }) | Out-Null
-        $logPath = Get-HarnessConfiguredPath -RootDir $RootDir -Name 'notification_log' -FallbackRelativePath 'harness/reports/notifications_log.md'
-        if (-not (Test-Path -LiteralPath $logPath)) { Write-Utf8File $logPath "# Notification Log`n`n## Entries`n" }
-        Append-Utf8File $logPath ("- time: {0}`n  - provider: {1}`n  - event: {2}`n  - status: {3}`n  - silent: {4}`n  - detail: {5}`n" -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'), $channel, $EventName, $status, ([string]$silent).ToLowerInvariant(), $(if ($detail) { $detail } else { 'none' }))
+        Write-HarnessNotificationLog $RootDir $channel $EventName $status $silent $detail
     }
     return $results.ToArray()
 }

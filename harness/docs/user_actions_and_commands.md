@@ -156,11 +156,14 @@ $env:HARNESS_TELEGRAM_BOT_TOKEN="<bot-token>"
 $env:HARNESS_TELEGRAM_CHAT_ID="<chat-id>"
 ```
 
-5. Send a test notification:
+5. From the target repository root, check the setup and send a test notification:
 
 ```powershell
-pwsh -NoProfile -File harness/scripts/send_harness_notification.ps1 -Force -Message "Harness notification test" -Provider telegram
+pwsh -NoProfile -File harness/scripts/harness.ps1 notify -Check
+pwsh -NoProfile -File harness/scripts/harness.ps1 notify -Test
 ```
+
+`-Check` sends nothing; `-Test` sends one real message. Run them in the target repository, not in the engine repository (its root has no `harness/` folder).
 
 6. Run status normally:
 
@@ -487,6 +490,8 @@ seed 실행이 멈추거나(`needs_operator`, `repeated_failure`) 비용 한도�
 
 - 조회·변경: `pwsh -NoProfile -File harness/scripts/harness.ps1 notify [옵션]`
 - 실제 테스트 발송: `... notify -Test` (설정된 채널로 메시지 1건을 실제로 보냄)
+- 안 오는 이유 진단: `... notify -Check` (보내지 않음). 전체 끄기 설정, 켜진 채널·알림 종류, 빠진 비밀값(사용자 변수에는 있지만 실행 중인 터미널·앱이 모르는 경우 포함), Telegram 봇·채팅 확인(`getMe`/`getChat`), 최근 기록 3건, 마지막 상태 알림 판단을 보여 줍니다.
+- 알림을 시도할 때마다 `harness/reports/notifications_log.md`에 남깁니다. 보내지 않았으면 `skipped`와 이유, 실패했으면 `failed`와 추정 원인(토큰 오류, 채팅 없음·`/start` 안 함, 봇 차단, 요청 제한, 네트워크)을 적습니다.
 - 방해 금지 시간에는 지금은 **소리 없이** 전달합니다(Telegram `disable_notification`, Discord 무음 플래그). 재알림 간격·횟수·대기 상한은 저장만 되며, 대기하며 재알림을 보내는 기능은 다음 단계(Telegram 원격 조작)에서 사용합니다.
 - 전체 끄기: `HARNESS_NOTIFY_DISABLED=true`.
 
