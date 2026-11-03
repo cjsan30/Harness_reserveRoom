@@ -189,7 +189,7 @@ function Send-HarnessNotification([string]$RootDir, [string]$EventName, [string]
 function ConvertTo-HarnessKoreanReason([string]$Text) {
     if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
     $rules = @(
-        @('no unique execution evidence', '완료 기록 거부: 검증 증거가 하나로 정해지지 않음'),
+        @('no unique execution evidence|refused to record completion', '완료 기록 거부: 작업 상태가 맞지 않음(엔진 문제)'),
         @('permission problem|denied tool use', '권한 문제: 필요한 도구 사용이 거부됨'),
         @('usage limit', 'AI 사용량 한도 도달'),
         @('budget', '실행 한도 도달'),

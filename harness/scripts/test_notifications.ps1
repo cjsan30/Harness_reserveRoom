@@ -120,6 +120,7 @@ Case unit 'messages are short Korean templates: known reasons are translated, un
     $stop=Format-HarnessStopNotification 'Harness_reserveRoom' 'needs_operator' 'reserve-room-v1__01__schema-foundation' 'stopped (needs_operator) at reserve-room-v1__01__schema-foundation: permission problem: the provider denied tool use' 'plan.md'
     Assert-True ($stop.Contains('작업: 01 schema-foundation') -and $stop.Contains('원인: 권한 문제') -and @($stop -split "`n").Count -le 5 -and $stop -notmatch 'denied tool use') "stop message not short Korean: $stop"
     Assert-True ((ConvertTo-HarnessKoreanReason 'completion has no unique execution evidence; validation required').StartsWith('완료 기록 거부')) 'evidence reason not translated'
+    Assert-True ((ConvertTo-HarnessKoreanReason 'The harness refused to record completion because the assignment state is inconsistent').StartsWith('완료 기록 거부')) 'refused completion not translated'
     $unknown=ConvertTo-HarnessKoreanReason ('zzz '+('y'*300))
     Assert-True ($unknown.StartsWith('분류되지 않은 오류: zzz') -and $unknown.Length -lt 130) "unknown reason not cut: $unknown"
 }

@@ -3,6 +3,18 @@
   "description": "Known failure signatures. The harness matches these literal, case-insensitive texts against a failed attempt to decide its failure class. Entries never instruct the worker; they only drive harness decisions. A project may add entries in harness/project/configs/known_errors.json.",
   "entries": [
     {
+      "id": "harness-completion-rejected",
+      "class": "environment",
+      "sources": ["worker"],
+      "match_any": [
+        "completion has no unique execution evidence",
+        "completion identity/state metadata is ambiguous",
+        "assignment identity/state metadata is ambiguous"
+      ],
+      "repair": null,
+      "note": "The harness refused to record completion because the assignment state is inconsistent; this is an engine-state problem, not the worker's code."
+    },
+    {
       "id": "docker-unavailable",
       "class": "environment",
       "sources": ["validation", "worker"],
