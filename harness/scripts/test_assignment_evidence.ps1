@@ -140,6 +140,31 @@ foreach($name in @('Get-AssignmentLifecycleRecord','Finalize-FeatureBranchForSee
     $definition=$dispatchAst.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name},$true)
     . ([scriptblock]::Create($definition.Extent.Text))
 }
+Test-Case 'a promoted pass stays verified after its worktree is removed (F-30)' {
+    $root=New-Fixture
+    Invoke-HarnessProcess git @('-C',$root,'branch','dev')|Out-Null
+    $tree=Join-Path $root 'harness/state/worktrees/tester/task'
+    Invoke-HarnessProcess git @('-C',$root,'worktree','add','-q','-b','tester/task',$tree,'dev')|Out-Null
+    $lease=Acquire-HarnessLock (Get-HarnessLockRoot $root) 'invoke_task'
+    try{$worker=New-AssignmentWorkerIntent $root 'tester' 'task' $lease 'unused' @() '' '' $tree}finally{Release-HarnessLock $lease}
+    # A record without a provider contract keeps this test about the workspace, not the provider.
+    $worker.status='exited';$worker.exit_code=0;$worker.PSObject.Properties.Remove('provider_contract')
+    Write-Utf8File (Get-AssignmentWorkerPaths $root 'task').Record ($worker|ConvertTo-Json -Depth 8)
+    $e=Assert-Pass $root
+    Assert-True ($e.workspace -eq $tree -and $e.after.branch -eq 'tester/task') "evidence not taken in the worktree: $($e.workspace)"
+    $statePath=Join-Path $root 'harness/state/git_workflow/state.json'
+    function Promotion([string]$Tree){Write-Utf8File $statePath (@{version=1;promotions=@(@{status='authorized';source_branch='tester/task';source_head=$e.after.head;source_tree=$Tree;target_branch='dev'})}|ConvertTo-Json -Depth 5)}
+    Invoke-HarnessProcess git @('-C',$root,'worktree','remove',$tree)|Out-Null
+    Assert-Rejected {Assert-AssignmentCompletionEvidence $root 'tester' 'task' (DoneText $root)}
+    Promotion ('0'*40)
+    Assert-Rejected {Assert-AssignmentCompletionEvidence $root 'tester' 'task' (DoneText $root)}
+    Promotion $e.after.index_tree
+    Assert-True ((Assert-AssignmentCompletionEvidence $root 'tester' 'task' (DoneText $root)).id -eq $e.id) 'promoted pass was rejected'
+    # dev moved to an unrelated commit: the promoted head is no longer in dev.
+    $other=(Invoke-HarnessProcess git @('-C',$root,'-c','user.name=Fixture','-c','user.email=test@example.invalid','commit-tree','-m','other','4b825dc642cb6eb9a060e54bf8d69288fbee4904')).Output.Trim()
+    Invoke-HarnessProcess git @('-C',$root,'branch','-f','dev',$other)|Out-Null
+    Assert-Rejected {Assert-AssignmentCompletionEvidence $root 'tester' 'task' (DoneText $root)}
+}
 Test-Case 'dispatch lifecycle rejects a pass after source changes' {
     $rootDir=New-Fixture;$null=Assert-Pass $rootDir
     Assert-True ((Get-AssignmentLifecycleRecord 'tester' 'task').Result -eq 'pass') 'verified pass not recognized'
