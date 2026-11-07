@@ -14,7 +14,7 @@
 - `requested_model`은 명시한 `-Model`만 기록합니다. CLI 설정에서 결정된 실제 모델은 추측하지 않고 `resolved_model: null`로 둡니다.
 - `billing_mode`는 프로필의 선언값이며 인증을 조회해 판단하지 않습니다. 실제 청구액은 `actual_cost_usd: null`입니다.
 - 이벤트 누락·잘못된 수치·깨진 JSON·실패 종료·미완료 turn은 `usage.status: unknown`, 토큰은 `null`입니다. 0으로 바꾸지 않습니다.
-- Claude 실행이 실패(권한 거부, 오류 결과 등)했어도 최종 result 이벤트가 정확히 하나이고 토큰 수가 유효하면, 그 값을 `provider_result.reported_usage`(`status: reported_on_failure`)로 따로 보존합니다. `usage`는 계속 unknown이고 성공 판정과 토큰 한도 계산에는 쓰지 않습니다. `get_execution_usage.ps1` 합계의 `reported_failure_count`·`reported_failure_tokens`로 실패 실행의 실제 소모량을 볼 수 있습니다. Codex는 아직 보존하지 않습니다.
+- Claude 실행이 실패(오류 결과, 비정상 종료 등)했어도 최종 result 이벤트가 정확히 하나이고 토큰 수가 유효하면, 그 값을 `provider_result.reported_usage`(`status: reported_on_failure`)로 따로 보존합니다. `usage`는 계속 unknown이고 성공 판정과 토큰 한도 계산에는 쓰지 않습니다. `get_execution_usage.ps1` 합계의 `reported_failure_count`·`reported_failure_tokens`로 실패 실행의 실제 소모량을 볼 수 있습니다. Codex는 아직 보존하지 않습니다.
 - 재시도도 새 invocation ID로 보존하며 같은 owner/assignment의 시도 번호를 증가시킵니다.
 - ledger에는 프롬프트·도구 출력·credential을 복사하지 않습니다. 2026-10-21부터 worker 실행 로그, git gate 로그, 검증 사이클 단계 로그, assignment 검증 증거 로그는 쓰기 전에 `Protect-HarnessSecretText`(`secret_redaction.ps1`)로 비밀값을 `[REDACTED]`로 바꿉니다. 대상은 알려진 토큰 형식(sk-, ghp_, github_pat_, glpat-, xox, AKIA, AIza, JWT), Bearer/Basic 헤더, URL 사용자 정보, 이름에 key/secret/token/password가 들어간 JSON·대입 값, 개인 키 블록, 이름이 민감해 보이는 환경 변수의 실제 값입니다. 숫자·true/false/null 값은 바꾸지 않으므로 `input_tokens` 같은 사용량 수치는 유지됩니다. 패턴 기반이라 임의 형식의 비밀값까지 보장하지는 않습니다.
 
@@ -58,8 +58,8 @@
 | --- | --- | --- | --- |
 | implementation | 검증이 돌았는데 실패, 검증 없이 종료, 작업 중 timeout, turn 소진 | 재시도. 직전 구현 실패와 signature가 같으면 즉시 멈춤(`repeated_failure`) | 예 |
 | environment | 목록의 환경 문구(Docker, 도구 없음, JDK, 포트, 네트워크), 출력 없이 5분 이상 멈춘 뒤 timeout, 하네스가 완료 기록을 거부함(`harness-completion-rejected`, 작업 상태 불일치) | 멈춤(`needs_operator`) | 아니오 |
-| permission | provider가 거부한 도구 사용(`permission_denials`). 단, 하네스의 완료 거부가 worker 로그에 있으면 그쪽이 원인이고 거부 목록은 details에만 남김 | 멈춤. 거부된 명령을 기록 | 아니오 |
-| provider | provider 오류 결과의 문구: 사용량 한도, 인증, rate limit, 과부하 | rate limit·과부하는 대기 후 최대 2회 재시도(run의 시도를 쓰지 않음). 사용량 한도는 `budget` 멈춤. 인증·기타는 멈춤 | 아니오 |
+| permission | 완료하지 못한 실행에서 provider가 거부한 도구 사용(`permission_denials`). 단, 하네스의 완료 거부가 worker 로그에 있으면 그쪽이 원인이고 거부 목록은 details에만 남김. 완료 증거가 결합된 실행의 거부는 실패가 아니라 요약의 경고 | 멈춤. 거부된 명령을 기록 | 아니오 |
+| provider | provider 오류 결과의 문구: 사용량 한도, 인증, rate limit, 과부하. 검증 전, 또는 검증 통과 뒤의 provider 실행 실패(완료 기록은 남았지만 결합되지 않음) | rate limit·과부하는 대기 후 최대 2회 재시도(run의 시도를 쓰지 않음). 사용량 한도는 `budget` 멈춤. 인증·기타는 멈춤 | 아니오 |
 | needs_input | worker 최종 메시지의 `HARNESS_NEEDS_INPUT: <무엇이 없는지>` | 멈춤 | 아니오 |
 
 - 분류 근거는 provider의 **오류 결과**만 봅니다. worker가 읽은 파일이나 도구 출력 속 문구는 provider 오류로 보지 않습니다.

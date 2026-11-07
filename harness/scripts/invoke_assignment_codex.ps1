@@ -280,10 +280,16 @@ Execution rules:
 	        Where-Object { $_.BaseName -like ($AssignmentId + "__*") } |
 	        Select-Object -First 1
     $finalResult = "unknown"
+    $completionError = $null
     if ($null -ne $finalAssignmentFile) {
         $finalContent = Get-Content -Encoding UTF8 -LiteralPath $finalAssignmentFile.FullName
         $finalResult = Get-MarkdownValue -Content $finalContent -Key "result"
-        if($finalResult -eq 'pass'){Assert-AssignmentCompletionEvidence $rootDir $Agent $AssignmentId ([IO.File]::ReadAllText($finalAssignmentFile.FullName)) | Out-Null}
+        # A pass whose evidence no longer binds still has to be classified before failing (F-29);
+        # an unclassified attempt is counted as an implementation failure.
+        if($finalResult -eq 'pass'){
+            try { Assert-AssignmentCompletionEvidence $rootDir $Agent $AssignmentId ([IO.File]::ReadAllText($finalAssignmentFile.FullName)) | Out-Null }
+            catch { $completionError = $_ }
+        }
     }
 
     $lastMessage = ""
@@ -293,9 +299,11 @@ Execution rules:
     # Keep each attempt's log; the shared run log is overwritten by the next attempt.
     Copy-Item -LiteralPath $runLogFile -Destination (Join-Path $runsDir ($AssignmentId + "__" + $workerRecord.invocation_id + "__run.log")) -Force
     $failure = $null
-    if ($finalResult -ne "pass") {
+    if ($finalResult -ne "pass" -or $null -ne $completionError) {
         $failure = Invoke-HarnessAttemptClassification $rootDir $workerRecord $runLogFile $lastMessage
     }
+    if ($null -ne $completionError) { throw $completionError }
+    $permissionDenials = @((Get-HarnessAttemptFacts $rootDir $workerRecord $runLogFile $lastMessage).permission_denials)
 
     $summary = @"
 # Agent Run Summary
@@ -314,6 +322,7 @@ Execution rules:
 - failure_kind: $(if ($null -ne $failure) { $failure.kind } else { "none" })
 - failure_counts_toward_assignment_limit: $(if ($null -ne $failure) { ([string]$failure.counts_toward_assignment_limit).ToLowerInvariant() } else { "none" })
 - failure_summary: $(if ($null -ne $failure) { $failure.summary } else { "none" })
+- permission_denials: $($permissionDenials.Count)$(if ($permissionDenials.Count) { ' (' + ($permissionDenials -join '; ') + ')' } else { '' })
 - work_area: $workArea
 - execution_root: $executionRoot
 	- worktree_path: $worktreePath

@@ -65,14 +65,12 @@ foreach($mode in @('missing_usage','missing_cache','negative','string','fraction
         Assert-True ($r.response_status -eq 'completed' -and $r.usage.status -eq 'unknown' -and $null -eq $r.usage.input_tokens -and $null -eq $r.usage.output_tokens) 'invalid counts accepted'
     }
 }
-foreach($mode in @('error_flag','error_subtype','denial_list','denial_event','errors','aborted','error_event','exit','missing','truncated','duplicate','wrong_session','string_flag','unknown_subtype','array_type','array_subtype')){
+foreach($mode in @('error_flag','error_subtype','errors','aborted','error_event','exit','missing','truncated','duplicate','wrong_session','string_flag','unknown_subtype','array_type','array_subtype')){
     Case security ("failure or incomplete response cannot succeed: $mode") {
         $e=$valid|ConvertFrom-Json;$prefix='';$suffix='';$code=0
         switch($mode){
             error_flag{$e.is_error=$true}
             error_subtype{$e.subtype='error_max_turns'}
-            denial_list{$e.permission_denials=@(@{tool_name='Bash';tool_input='fake-secret'})}
-            denial_event{$prefix='{"type":"system","subtype":"permission_denied"}'+"`n"}
             errors{$e|Add-Member errors @('fake-secret')}
             aborted{$e|Add-Member terminal_reason 'aborted_streaming'}
             error_event{$suffix="`n"+'{"type":"error","message":"fake-secret"}'}
@@ -94,6 +92,14 @@ foreach($mode in @('error_flag','error_subtype','denial_list','denial_event','er
         $r.execution_status='succeeded';$r.error_kind='none'
         Reject {Assert-HarnessProviderResult $r $worker.provider_contract $worker.invocation_id $code}
     }
+}
+# F-28: a denied tool use does not fail a run that otherwise completed; completion evidence decides.
+Case security 'permission denials alone do not make a completed run fail' {
+    $e=$valid|ConvertFrom-Json;$e.permission_denials=@(@{tool_name='Bash';tool_input=@{command='ls ../../assignments'}})
+    $body='{"type":"system","subtype":"permission_denied","tool_name":"Bash"}'+"`n"+($e|ConvertTo-Json -Depth 12 -Compress)
+    $worker=Record;$r=Get-HarnessProviderResult $worker (Log $body) 0
+    Assert-HarnessProviderResult $r $worker.provider_contract $worker.invocation_id 0
+    Assert-True ($r.execution_status -eq 'succeeded' -and $r.usage.status -eq 'known' -and $r.usage.input_tokens -eq 100) "denial changed the provider result: $($r|ConvertTo-Json -Compress)"
 }
 Case unit 'last message is extracted and stale message is cleared on failure' {
     $worker=Record;$worker|Add-Member exit_code 0;$out=Join-Path $testRoot 'message.txt'
@@ -151,7 +157,7 @@ exit 0
     }finally{Release-HarnessLock $lease}
 }
 foreach($layout in @('standalone','nested')){
-    foreach($mode in @('normal','reported_failure','missing_result')){
+    foreach($mode in @('normal','denied','reported_failure','missing_result')){
         Case integration ("$layout real invoke and worker completion: $mode") {
             $unicode=[string][char]0xD55C+[char]0xAE00
             $root=Join-Path $testRoot ("$layout $unicode [safe] "+[Guid]::NewGuid().ToString('N'))
@@ -181,6 +187,8 @@ if(-not $r.Success){throw $r.Output}
 $global:LASTEXITCODE=0
 '@
             if($mode -eq 'normal'){$body+="`n'"+$valid+"'"}
+            # F-28: a denied look outside the worktree after a bound pass.
+            if($mode -eq 'denied'){$body+="`n'"+$valid.Replace('"permission_denials":[]','"permission_denials":[{"tool_name":"Bash","tool_input":{"command":"ls ../../assignments"}}]')+"'"}
             if($mode -eq 'reported_failure'){$body+="`n'"+'{"type":"result","subtype":"error_during_execution","is_error":true,"errors":["fake-secret"]}'+"'"}
             Write-Utf8File $fake $body
             $oldRoot=$env:CODEX_HARNESS_ROOT;$oldPath=$env:HARNESS_CLAUDE_PATH;$oldWorkspace=$env:CODEX_GIT_WORKSPACE_ROOT
@@ -196,13 +204,19 @@ $global:LASTEXITCODE=0
                 Assert-True ($worker.provider_contract.provider -eq 'claude' -and $ledger.provider_result.invocation_id -eq $worker.invocation_id) 'identity lost'
                 $received=[IO.File]::ReadAllText((Join-Path $engine 'reports/received.json'))|ConvertFrom-Json
                 Assert-True ($received.cwd -eq (Resolve-ProjectPath $root $worker.execution_root 'workspace') -and $received.prompt.Contains($unicode) -and $received.arguments -contains '--no-session-persistence') 'cwd stdin or arguments lost'
-                if($mode -eq 'normal'){
+                if($mode -eq 'denied'){
+                    $summary=[IO.File]::ReadAllText((Join-Path $engine 'reports/agent_runs/task__summary.md'))
+                    Assert-True ($r.Success -and $worker.status -eq 'settled' -and $worker.provider_result.execution_status -eq 'succeeded' -and $summary.Contains('- permission_denials: 1 (Bash: ls ../../assignments)')) $r.Output
+                }elseif($mode -eq 'normal'){
                     Assert-True ($r.Success -and $worker.status -eq 'settled' -and $ledger.usage.input_tokens -eq 100) $r.Output
                     Assert-True (([IO.File]::ReadAllText((Join-Path $engine 'reports/agent_runs/task__last_message.txt'))).Trim() -eq 'done') 'last message missing'
                     Reject {Repair-AssignmentWorkerExit $root 'tester' 'task' -MarkFailed -Reason 'a bound pass must not be downgraded'}
                 }else{
                     Assert-True (-not $r.Success -and $worker.exit_code -eq 0 -and $worker.provider_result.execution_status -eq 'failed' -and $worker.status -eq 'exited') 'failed provider settled'
                     Reject {Repair-AssignmentWorkerExit $root 'tester' 'task'}
+                    # F-29: the attempt is classified, so it is not counted as an implementation failure by default.
+                    $history=Read-HarnessFailureHistory $root 'task'
+                    Assert-True (@($history.attempts).Count -eq 1 -and $history.attempts[0].invocation_id -eq $worker.invocation_id -and $history.attempts[0].class -eq 'provider' -and -not $history.attempts[0].counts_toward_assignment_limit) "post-completion failure not classified: $($history|ConvertTo-Json -Depth 6 -Compress)"
                     $recheck=Invoke-HarnessPowerShellFile (Join-Path $engine 'scripts/complete_assignment.ps1') @('-Agent','tester','-AssignmentId','task','-Result','pass','-Revalidate') -AllowFailure
                     Assert-True (-not $recheck.Success) 'revalidation laundered failure'
                     # Operator recovery (F-24 follow-up): only an explicit, reasoned decision turns the
@@ -223,7 +237,7 @@ $global:LASTEXITCODE=0
 }
 # Field finding F-15: a failed invocation keeps usage unknown, but the usage the
 # provider reported is retained separately and never counted as known usage.
-$denied='{"type":"result","subtype":"success","is_error":false,"session_id":"fixture-session","num_turns":23,"result":"blocked","terminal_reason":"completed","usage":{"input_tokens":24,"cache_read_input_tokens":643727,"cache_creation_input_tokens":35460,"output_tokens":6283},"permission_denials":[{"tool_name":"Bash","tool_input":{"command":"./gradlew test"}}]}'
+$denied='{"type":"result","subtype":"success","is_error":true,"session_id":"fixture-session","num_turns":23,"result":"blocked","terminal_reason":"completed","usage":{"input_tokens":24,"cache_read_input_tokens":643727,"cache_creation_input_tokens":35460,"output_tokens":6283},"permission_denials":[{"tool_name":"Bash","tool_input":{"command":"./gradlew test"}}]}'
 Case unit 'failed invocation keeps reported usage apart from unknown usage' {
     $worker=Record;$r=Get-HarnessProviderResult $worker (Log $denied) 0
     Assert-HarnessProviderResult $r $worker.provider_contract $worker.invocation_id 0
