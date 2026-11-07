@@ -53,6 +53,8 @@ pwsh -NoProfile -File harness/scripts/complete_assignment.ps1 -Agent tester -Ass
 
 자동 seed 승격은 증거 확인 후 기존 feature gate·stage·commit을 수행합니다. index/HEAD가 바뀌므로 최종 commit에서 assignment 검증을 다시 실행합니다. integration gate 뒤에도 증거를 확인한 다음 기존 승인 절차를 따릅니다. `main` 승인 정책은 유지됩니다.
 
+dev 승격 뒤에는 assignment worktree가 지워집니다(F-30). 증거에 적힌 작업 폴더가 없으면, 승인된 dev 승격 기록이 증거와 같은 브랜치·HEAD·tree를 가리키고 그 HEAD가 dev에 들어 있을 때만 증거를 유효로 봅니다. 승격 자체가 그 HEAD에 대한 feature·integration gate 통과를 요구합니다. 일치하는 승격이 없으면 `validation workspace is gone and no dev promotion matches the evidence`로 거부합니다.
+
 ## 운영 경계
 
 Provider 계약이 있는 worker의 성공 종료에는 유효한 정규화 결과가 필요합니다. exit 0이어도 provider가 실패 이벤트를 보고하면 pass·복구·재검증을 거부합니다. provider 실행 `succeeded`만으로 제품 동작 또는 assignment 성공을 판정하지 않습니다. [Provider 계약](provider_contract.md)을 참고하세요.
