@@ -31,7 +31,7 @@
 
 print stream의 단일 최종 `result`를 사용합니다. event type/subtype은 문자열이어야 하며 `subtype: success` 및 boolean `is_error: false`가 필요합니다. init에 session ID가 있으면 result와 일치해야 합니다. 중복 result, 손상 JSON, 누락 result, 잘못된 타입 또는 알 수 없는 subtype은 `response_status: unknown`, `execution_status: failed`, `error_kind: provider_protocol`입니다. 명시적 실패는 다른 성공보다 우선합니다.
 
-`is_error: true`, `error_*` subtype, error 이벤트, 권한 거부 목록/이벤트, errors 목록, 완료가 아닌 terminal_reason은 실패입니다. 비정상 종료 코드는 `process_exit`으로 기록합니다. 원본 오류 문자열·credential은 정규화된 provider_result에 복사하지 않습니다. 원본 로그 자체의 범용 비밀값 필터링은 별도 과제입니다.
+`is_error: true`, `error_*` subtype, error 이벤트, errors 목록, 완료가 아닌 terminal_reason은 실패입니다. 권한 거부 목록/이벤트만으로는 실패로 보지 않습니다(F-28): 실행이 정상 완료됐다면 성공 여부는 완료 증거로만 정하고, 거부 건수와 명령은 실행 요약의 `permission_denials`에 남깁니다. 완료하지 못한 실행은 실패 분류에서 `permission`으로 멈춥니다. 비정상 종료 코드는 `process_exit`으로 기록합니다. 원본 오류 문자열·credential은 정규화된 provider_result에 복사하지 않습니다. 원본 로그 자체의 범용 비밀값 필터링은 별도 과제입니다.
 
 형식은 Anthropic의 [공식 SDK ResultMessage 정의](https://github.com/anthropics/claude-agent-sdk-python/blob/main/src/claude_agent_sdk/types.py)를 참고했습니다. CLI가 새 필드/형식을 추가하더라도 모르는 상태를 성공으로 추정하지 않습니다.
 

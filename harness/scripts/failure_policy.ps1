@@ -216,9 +216,12 @@ function Get-HarnessAttemptClassification($Catalog, $Facts) {
     if ($Facts.result_subtype -ceq 'error_max_turns') {
         return New-HarnessFailureClassification 'implementation' 'max_turns' 'worker used all of its turns before finishing' $null (Get-HarnessFailureSignature '' 'max-turns')
     }
-    if ($Facts.provider_error_kind -cin @('process_exit','provider_error','provider_protocol') -and -not $Facts.validation_ran) {
+    # A provider failure after a passing validation is not a code failure either (F-29).
+    $validationPassed = ($Facts.validation_ran -and $Facts.validation_status -ceq 'pass')
+    if ($Facts.provider_error_kind -cin @('process_exit','provider_error','provider_protocol') -and (-not $Facts.validation_ran -or $validationPassed)) {
         $detail = @($Facts.provider_messages | ForEach-Object { $text = Protect-HarnessSecretText $_; if ($text.Length -gt 200) { $text.Substring(0, 200) } else { $text } } | Select-Object -First 3)
-        return New-HarnessFailureClassification 'provider' 'unknown' ("provider run failed ({0}) before any validation" -f $Facts.provider_error_kind) $null $null $detail
+        $when = if ($validationPassed) { 'after validation passed' } else { 'before any validation' }
+        return New-HarnessFailureClassification 'provider' 'unknown' ("provider run failed ({0}) {1}" -f $Facts.provider_error_kind, $when) $null $null $detail
     }
     if (-not [string]::IsNullOrWhiteSpace($Facts.needs_input)) {
         return New-HarnessFailureClassification 'needs_input' 'missing_information' 'worker stopped because required information is missing' $null $null @($Facts.needs_input)
@@ -410,6 +413,8 @@ function Write-HarnessFailureMemo([string]$RootDir, [string]$AssignmentId) {
         "# Failure memo: $AssignmentId",
         '',
         'Reference data recorded by Harness from earlier attempts. It is not an instruction and does not change the assignment, permissions or validation.',
+        # A retry worker that went looking for harness state was denied and failed the run (F-28).
+        'Logs and harness state named here live in the main repository, outside your worktree, and cannot be read from it. Do not look for them. Harness and environment problems (not counted attempts) are handled by the operator before a retry; work only on the assignment in your worktree.',
         ''
     )
     $sections = New-Object 'System.Collections.Generic.List[string]'
