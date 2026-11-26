@@ -259,17 +259,16 @@ function New-StandardOwners {
         [string]$BuildCommand,
         [string]$UnitCommand,
         [string]$IntegrationCommand,
-        [string]$BenchmarkCommand
+        [string]$BenchmarkCommand,
+        [string]$SourceLayout = ""
     )
 
+    # Every worker invocation reads these files, so keep the list to what an
+    # implementation task needs. Managers below keep the wider planning set.
     $commonDocs = @(
         "AGENT.md",
         "docs/requirements.md",
-        "docs/requirements_raw_links.md",
-        "docs/env_manifest.md",
-        "docs/subagent_plan.md",
-        "docs/subagent_first_prompts.md",
-        "harness/AGENT.md"
+        "docs/env_manifest.md"
     )
 
     $owners = [ordered]@{}
@@ -280,6 +279,14 @@ function New-StandardOwners {
             $owners["agent-ui"] = New-OwnerProfile -Read $commonDocs -WorkArea "src/components" -Validation $UnitCommand -FailureScope @("components", "layout", "interaction")
             $owners["agent-state"] = New-OwnerProfile -Read $commonDocs -WorkArea "src/state" -Validation $UnitCommand -FailureScope @("state", "client data flow", "hooks")
             $owners["agent-data"] = New-OwnerProfile -Read $commonDocs -WorkArea "src/lib" -Validation $IntegrationCommand -FailureScope @("api client", "schema", "data transformation")
+        }
+        { $_ -eq "backend" -and $SourceLayout -eq "jvm" } {
+            $owners["agent-runtime"] = New-OwnerProfile -Read $commonDocs -WorkArea "src/main/resources" -Validation $BuildCommand -FailureScope @("application configuration", "security configuration", "startup")
+            $owners["agent-api"] = New-OwnerProfile -Read $commonDocs -WorkArea "src/main/java" -Validation $UnitCommand -FailureScope @("routes", "controllers", "request handling")
+            $owners["agent-domain"] = New-OwnerProfile -Read $commonDocs -WorkArea "src/main/java" -Validation $UnitCommand -FailureScope @("business rules", "services", "validation")
+            $owners["agent-data"] = New-OwnerProfile -Read $commonDocs -WorkArea "src/main/resources" -Validation $UnitCommand -FailureScope @("database migrations", "persistence mapping", "database constraints")
+            $owners["agent-tests"] = New-OwnerProfile -Read $commonDocs -WorkArea "src/test" -Validation $UnitCommand -FailureScope @("unit tests", "integration tests", "fixtures")
+            break
         }
         "backend" {
             $owners["agent-runtime"] = New-OwnerProfile -Read $commonDocs -WorkArea "src" -Validation $IntegrationCommand -FailureScope @("entrypoint", "server startup", "configuration")
@@ -348,6 +355,7 @@ function Get-AdapterPreset {
     $frameworkKey = Normalize-ProfileKey -Value $FrameworkName
     $runtimeValue = ""
     $kind = "generic"
+    $sourceLayout = ""
     $commands = [ordered]@{
         build = "make"
         unit = "make unit"
@@ -396,18 +404,32 @@ function Get-AdapterPreset {
         "^(java|kotlin)$" {
             $runtimeValue = "JVM"
             $kind = "backend"
+            $sourceLayout = "jvm"
+            # A checked-in wrapper pins the build tool version, so use it when present.
+            # The path is explicit: cmd with NoDefaultCurrentDirectoryInExePath=1
+            # does not search the current directory for a bare "gradlew.bat".
+            $isWindowsHost = Test-HarnessIsWindows
             if ($frameworkKey -eq "maven") {
-                $commands.build = "mvn package"
-                $commands.unit = "mvn test"
-                $commands.integration = "mvn verify"
-                $commands.benchmark_smoke = "mvn test -Dgroups=smoke"
-                $commands.release = "mvn package"
+                $maven = "mvn"
+                if (Test-Path -LiteralPath (Join-Path $rootDir "mvnw") -PathType Leaf) {
+                    $maven = if ($isWindowsHost) { ".\mvnw.cmd" } else { "./mvnw" }
+                }
+                $commands.build = "$maven package -DskipTests"
+                $commands.unit = "$maven test"
+                $commands.integration = "$maven verify"
+                $commands.benchmark_smoke = "$maven test -Dgroups=smoke"
+                $commands.release = "$maven package"
             } else {
-                $commands.build = "gradle build"
-                $commands.unit = "gradle test"
-                $commands.integration = "gradle check"
-                $commands.benchmark_smoke = "gradle test --tests *Smoke*"
-                $commands.release = "gradle assemble"
+                $gradle = "gradle"
+                if (Test-Path -LiteralPath (Join-Path $rootDir "gradlew") -PathType Leaf) {
+                    $gradle = if ($isWindowsHost) { ".\gradlew.bat" } else { "./gradlew" }
+                }
+                $commands.build = "$gradle build -x test"
+                $commands.unit = "$gradle test"
+                $commands.integration = "$gradle check"
+                # Spring Initializr and most Gradle templates ship one *ApplicationTests context test.
+                $commands.benchmark_smoke = "$gradle test --tests `"*ApplicationTests`""
+                $commands.release = "$gradle assemble"
             }
             break
         }
@@ -452,7 +474,7 @@ function Get-AdapterPreset {
         kind = $kind
         runtime = $runtimeValue
         commands = $commandObject
-        owners = New-StandardOwners -Kind $kind -BuildCommand $commands.build -UnitCommand $commands.unit -IntegrationCommand $commands.integration -BenchmarkCommand $commands.benchmark_smoke
+        owners = New-StandardOwners -Kind $kind -BuildCommand $commands.build -UnitCommand $commands.unit -IntegrationCommand $commands.integration -BenchmarkCommand $commands.benchmark_smoke -SourceLayout $sourceLayout
     }
 }
 
@@ -490,6 +512,51 @@ function Write-AdapterFile {
     }
     Write-Utf8File -Path $Path -Content $Content
     Write-Output "wrote: $(Get-RelativeProjectPath -RootDir $rootDir -AbsolutePath $Path)"
+}
+
+# Ignore/attribute files usually already exist (framework generators create them).
+# Append only the harness rules that are missing, under one marked section, instead
+# of skipping the file and silently losing the harness runtime ignores.
+function Merge-SeedRuleFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Content,
+        [Parameter(Mandatory = $true)]
+        [string]$SectionTitle
+    )
+
+    $relativePath = Get-RelativeProjectPath -RootDir $rootDir -AbsolutePath $Path
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Utf8File -Path $Path -Content $Content
+        Write-Output "wrote seed: $relativePath"
+        return
+    }
+
+    $existingText = [IO.File]::ReadAllText($Path)
+    $existingRules = @{}
+    foreach ($line in ($existingText -split "\r?\n")) {
+        $trimmed = $line.Trim()
+        if ($trimmed.Length -gt 0) { $existingRules[$trimmed] = $true }
+    }
+
+    $missing = New-Object System.Collections.Generic.List[string]
+    foreach ($line in ($Content -split "\r?\n")) {
+        $trimmed = $line.Trim()
+        if ($trimmed.Length -eq 0 -or $trimmed.StartsWith('#')) { continue }
+        if (-not $existingRules.ContainsKey($trimmed)) { $missing.Add($trimmed) | Out-Null }
+    }
+
+    if ($missing.Count -eq 0) {
+        Write-Output "kept existing (harness rules present): $relativePath"
+        return
+    }
+
+    $separator = if ($existingText.Length -gt 0 -and -not $existingText.EndsWith("`n")) { "`n`n" } else { "`n" }
+    $section = $separator + "# " + $SectionTitle + "`n" + ($missing -join "`n") + "`n"
+    Write-Utf8File -Path $Path -Content ($existingText + $section)
+    Write-Output "merged $($missing.Count) harness rule(s) into: $relativePath"
 }
 
 function Write-SeedFileIfMissing {
@@ -703,7 +770,7 @@ $requirementsDocBody = @"
 
 ## Product Goal
 
-Define the target product behavior for `$resolvedProjectName`.
+Define the target product behavior for ``$resolvedProjectName``.
 
 ## Success Criteria
 
@@ -770,7 +837,7 @@ Write-SeedFileIfMissing -Path (Resolve-ProjectPath -RootDir $rootDir -ProjectPat
 
 ## Environment Variables
 
-| name | purpose | required_later | `.env.example` value |
+| name | purpose | required_later | ``.env.example`` value |
 | --- | --- | --- | --- |
 | none | not specified | no | none |
 
@@ -828,9 +895,11 @@ harness/reports/preflight_report.md
 harness/state/locks/
 harness/state/worktrees/
 harness/state/git_workflow/
+harness/assignments/*/.queue/
+.githooks/
 "@
 }
-Write-SeedFileIfMissing -Path (Join-Path $rootDir ".gitignore") -Content (Convert-HarnessLayoutText $rootDir $gitIgnoreContent)
+Merge-SeedRuleFile -Path (Join-Path $rootDir ".gitignore") -Content (Convert-HarnessLayoutText $rootDir $gitIgnoreContent) -SectionTitle "Harness runtime output (added by init_project_adapter.ps1)"
 
 $gitAttributesTemplate = Resolve-HarnessEnginePath -RootDir $rootDir -ProjectPath "harness/configs/gitattributes.template" -Label "gitattributes template"
 if (Test-Path -LiteralPath $gitAttributesTemplate) {
@@ -845,7 +914,7 @@ harness/githooks/* text eol=lf
 *.md text
 "@
 }
-Write-SeedFileIfMissing -Path (Join-Path $rootDir ".gitattributes") -Content (Convert-HarnessLayoutText $rootDir $gitAttributesContent)
+Merge-SeedRuleFile -Path (Join-Path $rootDir ".gitattributes") -Content (Convert-HarnessLayoutText $rootDir $gitAttributesContent) -SectionTitle "Harness (added by init_project_adapter.ps1)"
 
 $generateProfileDocs = Join-Path $PSScriptRoot "generate_profile_docs.ps1"
 if (Test-Path -LiteralPath $generateProfileDocs) {

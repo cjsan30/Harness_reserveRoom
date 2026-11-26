@@ -1,5 +1,7 @@
 param([string]$OutputDirectory='')
 $ErrorActionPreference='Stop'
+# Tests never send real notifications: drop the operator's notification secrets (F-26).
+foreach ($harnessNotifySecret in @('HARNESS_TELEGRAM_BOT_TOKEN', 'HARNESS_TELEGRAM_CHAT_ID', 'HARNESS_DISCORD_WEBHOOK_URL', 'HARNESS_NOTIFY_PROVIDER')) { [Environment]::SetEnvironmentVariable($harnessNotifySecret, $null, 'Process') }
 . (Join-Path $PSScriptRoot 'harness_common.ps1')
 . (Join-Path $PSScriptRoot 'harness_cli.ps1')
 $source=Split-Path -Parent $PSScriptRoot
@@ -24,7 +26,7 @@ Test-Case unit 'help needs no profile or target' {
     $r=Call-Cli @('help','-Json');$j=$r.Output|ConvertFrom-Json
     Assert-True ($r.Success -and $j.schema_version -eq 1 -and $j.output.Contains('-Preview')) $r.Output
 }
-foreach($tokens in @(@('unknown'),@('status','-Force'),@('run'),@('resume','-PlanFile','plan.md','-Model','x'),@('run','-PlanFile','p','-MaxWorkerAttempts','0'),@('run','-PlanFile','p','-DryRun','-PreflightOnly'),@('status','-Json','-Json'),@('init','-ProjectName'))){
+foreach($tokens in @(@('unknown'),@('status','-Force'),@('run'),@('resume','-PlanFile','plan.md','-Model','x'),@('run','-PlanFile','p','-MaxWorkerAttempts','0'),@('run','-PlanFile','p','-DryRun','-PreflightOnly'),@('status','-Json','-Json'),@('init','-ProjectName'),@('attempts'),@('attempts','-AssignmentId','t','-Grant','1'),@('attempts','-AssignmentId','t','-Grant','0','-Reason','r'),@('attempts','-AssignmentId','t','-Reason','r'),@('env','-Grant','1'),@('notify','-Telegram','yes'),@('notify','-QuietStart','25:00'),@('notify','-ReminderMinutes','soon'))){
     Test-Case unit ('invalid options: '+($tokens -join ' ')) {
         $blocked=$false;try{Get-HarnessCliRequest $tokens|Out-Null}catch{$blocked=$true}
         Assert-True $blocked 'invalid arguments accepted'
@@ -121,6 +123,15 @@ Test-Case integration 'child nonzero result is never converted to CLI success' {
 Test-Case security 'arbitrary script command cannot be selected' {
     $r=Call-Cli @('../scripts/complete_assignment.ps1','-Json')
     Assert-True ($r.ExitCode -eq 2) 'arbitrary script command accepted'
+}
+Test-Case security 'paid run entry points refuse unknown options before doing anything' {
+    # Field finding: '-Preview' on run_seed_handoff.ps1 was silently ignored and started a real run.
+    $empty=Join-Path $testRoot 'unknown-option';Ensure-HarnessDirectory $empty
+    foreach($name in @('run_seed_handoff.ps1','dispatch_seed_plan.ps1')){
+        $r=Invoke-HarnessProcess (Get-HarnessPowerShellExecutable) @('-NoProfile','-File',(Join-Path $PSScriptRoot $name),'-Preview') -WorkingDirectory $empty -AllowFailure
+        Assert-True ($r.ExitCode -ne 0 -and $r.Output.Contains('Preview')) "$name accepted an unknown option: $($r.Output)"
+    }
+    Assert-True (@(Get-ChildItem -LiteralPath $empty -Force).Count -eq 0) 'refused run still wrote files'
 }
 Write-Utf8File (Join-Path $testRoot 'results.json') ($results.ToArray()|ConvertTo-Json -Depth 8)
 $failed=@($results|Where-Object{-not $_.passed}).Count

@@ -149,6 +149,26 @@ function New-AssignmentValidationEvidence([string]$RootDir,[string]$Owner,[strin
     return $evidence
 }
 
+# Promotion removes the assignment worktree (F-30). Its evidence still binds when an
+# authorized dev promotion names the exact branch, head and tree the evidence recorded
+# and that head is in dev; the promotion itself required passing gates for that head.
+function Test-AssignmentEvidencePromoted([string]$RootDir,$Evidence) {
+    if(-not (Get-Command Get-GitWorkflowConfig -ErrorAction SilentlyContinue)){. (Join-Path $PSScriptRoot 'git_workflow_common.ps1')}
+    $after=$Evidence.after
+    if($null -eq $after -or [string]$after.head -cnotmatch '^(?:[a-f0-9]{40}|[a-f0-9]{64})$' -or [string]$after.index_tree -cnotmatch '^(?:[a-f0-9]{40}|[a-f0-9]{64})$' -or [string]::IsNullOrWhiteSpace([string]$after.branch)){return $false}
+    $config=Get-GitWorkflowConfig -RootDir $RootDir
+    $statePath=Get-GitWorkflowResolvedPath -RootDir $RootDir -Name 'state_file'
+    if(-not (Test-Path -LiteralPath $statePath)){return $false}
+    try{$state=[IO.File]::ReadAllText($statePath)|ConvertFrom-Json}catch{return $false}
+    foreach($promotion in @($state.promotions)){
+        if($null -eq $promotion -or [string]$promotion.status -cne 'authorized' -or [string]$promotion.target_branch -cne $config.DevBranch){continue}
+        if([string]$promotion.source_branch -cne [string]$after.branch -or [string]$promotion.source_head -cne [string]$after.head -or [string]$promotion.source_tree -cne [string]$after.index_tree){continue}
+        $contained=Invoke-HarnessProcess -Executable 'git' -Arguments @('-C',$RootDir,'merge-base','--is-ancestor',[string]$promotion.source_head,$config.DevBranch) -AllowFailure
+        if($contained.Success){return $true}
+    }
+    return $false
+}
+
 function Assert-AssignmentCompletionEvidence([string]$RootDir,[string]$Owner,[string]$AssignmentId,[string]$Content,[switch]$AllowActiveWorker,[switch]$ReadOnly) {
     $lines=@($Content -split '\r?\n')
     foreach($key in @('assignment_id','status','result')){
@@ -180,6 +200,11 @@ function Assert-AssignmentCompletionEvidence([string]$RootDir,[string]$Owner,[st
     if($evidence.log -cne (Get-RelativeProjectPath $RootDir $expectedLog) -or $evidence.log_sha256 -cne (Get-EvidenceFileHash $expectedLog)){throw 'validation log is missing or changed'}
     $readIndex=if($ReadOnly){[string]$evidence.after.index_tree}else{''}
     if($ReadOnly -and -not $readIndex){throw 'missing evidence index tree'}
-    if(-not (Test-AssignmentSnapshotEqual $evidence.before $evidence.after) -or -not (Test-AssignmentSnapshotEqual $evidence.after (Get-AssignmentCodeSnapshot $RootDir $workspace $readIndex))){throw 'validation evidence is stale; source, branch, index or HEAD changed'}
+    if(-not (Test-AssignmentSnapshotEqual $evidence.before $evidence.after)){throw 'validation evidence is stale; source, branch, index or HEAD changed'}
+    if(-not (Test-Path -LiteralPath $workspace -PathType Container)){
+        if(Test-AssignmentEvidencePromoted $RootDir $evidence){return $evidence}
+        throw 'validation workspace is gone and no dev promotion matches the evidence'
+    }
+    if(-not (Test-AssignmentSnapshotEqual $evidence.after (Get-AssignmentCodeSnapshot $RootDir $workspace $readIndex))){throw 'validation evidence is stale; source, branch, index or HEAD changed'}
     return $evidence
 }

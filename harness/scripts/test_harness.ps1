@@ -1,5 +1,7 @@
 param([switch]$SyntaxOnly)
 $ErrorActionPreference = 'Stop'
+# Tests never send real notifications: drop the operator's notification secrets (F-26).
+foreach ($harnessNotifySecret in @('HARNESS_TELEGRAM_BOT_TOKEN', 'HARNESS_TELEGRAM_CHAT_ID', 'HARNESS_DISCORD_WEBHOOK_URL', 'HARNESS_NOTIFY_PROVIDER')) { [Environment]::SetEnvironmentVariable($harnessNotifySecret, $null, 'Process') }
 $root = Split-Path -Parent $PSScriptRoot
 $failures = New-Object 'System.Collections.Generic.List[string]'
 $scripts = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File)
@@ -20,7 +22,7 @@ Write-Output "Syntax: $($scripts.Count) PowerShell scripts and configuration JSO
 if ($SyntaxOnly) { exit 0 }
 . (Join-Path $PSScriptRoot 'harness_common.ps1')
 $failed = $false
-foreach ($suite in @('test_harness_safety.ps1', 'test_harness_recovery.ps1', 'test_execution_usage.ps1', 'test_assignment_evidence.ps1', 'test_harness_layout.ps1', 'test_harness_cli.ps1', 'test_provider_contract.ps1', 'test_provider_claude.ps1', 'test_harness_shell.ps1', 'test_harness_dashboard.ps1', 'test_git_workflow_policy.ps1')) {
+foreach ($suite in @('test_harness_safety.ps1', 'test_harness_recovery.ps1', 'test_execution_usage.ps1', 'test_failure_policy.ps1', 'test_environment_repair.ps1', 'test_notifications.ps1', 'test_assignment_evidence.ps1', 'test_harness_layout.ps1', 'test_harness_cli.ps1', 'test_provider_contract.ps1', 'test_provider_claude.ps1', 'test_harness_shell.ps1', 'test_harness_dashboard.ps1', 'test_git_workflow_policy.ps1', 'test_project_adapter.ps1')) {
     $result = Invoke-HarnessPowerShellFile -FilePath (Join-Path $PSScriptRoot $suite) -AllowFailure
     Write-Output $result.Output
     if (-not $result.Success) { $failed = $true }

@@ -8,6 +8,9 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot 'provider_contract.ps1')
 . (Join-Path $PSScriptRoot 'execution_usage.ps1')
 . (Join-Path $PSScriptRoot 'assignment_evidence.ps1')
+. (Join-Path $PSScriptRoot 'failure_policy.ps1')
+. (Join-Path $PSScriptRoot 'environment_repair.ps1')
+. (Join-Path $PSScriptRoot 'notification_channels.ps1')
 $script:HarnessProjectProfileCache = @{}
 $script:HarnessUtf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $script:HarnessScratchDirectory = $null
@@ -121,10 +124,21 @@ function Invoke-HarnessProcess {
 
     $previousPreference = $ErrorActionPreference
     $previousLocation = $null
+    # Git always writes UTF-8, but PowerShell decodes native output with the console
+    # code page (949 on Korean Windows), which corrupts non-ASCII paths. Other tools
+    # follow the system locale and keep the console encoding.
+    $utf8Process = ([IO.Path]::GetFileNameWithoutExtension($Executable) -ieq 'git')
+    $previousConsoleEncoding = $null
+    $previousOutputEncoding = $OutputEncoding
     try {
         if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
             $previousLocation = Get-Location
             Push-Location -LiteralPath $WorkingDirectory
+        }
+        if ($utf8Process) {
+            $previousConsoleEncoding = [Console]::OutputEncoding
+            $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+            [Console]::OutputEncoding = $OutputEncoding
         }
 
         $ErrorActionPreference = "Continue"
@@ -136,6 +150,10 @@ function Invoke-HarnessProcess {
         $exitCode = $LASTEXITCODE
     } finally {
         $ErrorActionPreference = $previousPreference
+        if ($null -ne $previousConsoleEncoding) {
+            [Console]::OutputEncoding = $previousConsoleEncoding
+            $OutputEncoding = $previousOutputEncoding
+        }
         if ($null -ne $previousLocation) {
             Pop-Location
         }

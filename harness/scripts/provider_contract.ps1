@@ -53,14 +53,14 @@ function Export-HarnessProviderLastMessage($WorkerRecord,[string]$LogPath,[strin
 function Get-HarnessProviderResult($WorkerRecord,[string]$LogPath,[int]$ExitCode) {
     $contract=Get-HarnessWorkerProviderContract $WorkerRecord
     if($contract.provider -ceq 'claude'){
-        $parsed=Get-ClaudeOutputFromLog $LogPath $ExitCode;$protocol=$parsed.response_status;$usage=$parsed.usage
-    }else{$protocol=Get-CodexResponseStatus $LogPath;$usage=Get-CodexUsageFromLog $LogPath $ExitCode}
+        $parsed=Get-ClaudeOutputFromLog $LogPath $ExitCode;$protocol=$parsed.response_status;$usage=$parsed.usage;$reportedUsage=$parsed.reported_usage
+    }else{$protocol=Get-CodexResponseStatus $LogPath;$usage=Get-CodexUsageFromLog $LogPath $ExitCode;$reportedUsage=$null}
     $errorKind=Get-HarnessProviderErrorKind $contract.provider $protocol $ExitCode
     return [pscustomobject]@{
         version=1;provider=$contract.provider;invocation_id=$WorkerRecord.invocation_id;exit_code=$ExitCode
         execution_status=$(if($errorKind -cne 'none'){'failed'}else{'succeeded'})
         response_status=$protocol;error_kind=$errorKind
-        requested_model=$contract.requested_model;resolved_model=$null;usage=$usage
+        requested_model=$contract.requested_model;resolved_model=$null;usage=$usage;reported_usage=$reportedUsage
     }
 }
 
@@ -78,6 +78,12 @@ function Assert-HarnessProviderResult($Result,$Contract,[string]$InvocationId,$E
         if($Result.usage.cached_input_tokens -gt $Result.usage.input_tokens -or $expected -eq 'failed'){throw 'inconsistent provider usage'}
     }else{
         foreach($name in @('input_tokens','cached_input_tokens','output_tokens')){if($null -ne $Result.usage.$name){throw 'unknown provider usage must contain null counts'}}
+    }
+    # Optional: usage the provider reported for a failed invocation (older results lack it).
+    if($null -ne $Result.PSObject.Properties['reported_usage'] -and $null -ne $Result.reported_usage){
+        if($Result.usage.status -ceq 'known' -or $Result.reported_usage.status -cne 'reported_on_failure'){throw 'reported usage is only valid for a failed invocation'}
+        foreach($name in @('input_tokens','cached_input_tokens','output_tokens')){if(-not (Test-HarnessUsageInteger $Result.reported_usage.$name)){throw 'invalid reported token count'}}
+        if($Result.reported_usage.cached_input_tokens -gt $Result.reported_usage.input_tokens){throw 'inconsistent reported usage'}
     }
 }
 

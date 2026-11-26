@@ -1,6 +1,8 @@
 param([string]$OutputDirectory = "")
 
 $ErrorActionPreference = 'Stop'
+# Tests never send real notifications: drop the operator's notification secrets (F-26).
+foreach ($harnessNotifySecret in @('HARNESS_TELEGRAM_BOT_TOKEN', 'HARNESS_TELEGRAM_CHAT_ID', 'HARNESS_DISCORD_WEBHOOK_URL', 'HARNESS_NOTIFY_PROVIDER')) { [Environment]::SetEnvironmentVariable($harnessNotifySecret, $null, 'Process') }
 . (Join-Path $PSScriptRoot 'harness_common.ps1')
 . (Join-Path $PSScriptRoot 'git_workflow_common.ps1')
 $engineRoot = Split-Path -Parent $PSScriptRoot
@@ -15,6 +17,24 @@ function Test-Case([string]$Name, [scriptblock]$Body) {
 }
 function Run-Child([string]$File, [object[]]$Arguments = @()) {
     Invoke-HarnessPowerShellFile -FilePath $File -Arguments $Arguments -AllowFailure
+}
+# Field finding F-22: Git writes UTF-8, but a Korean Windows console decodes native
+# output as code page 949. Non-ASCII repository paths must survive a git round trip.
+Test-Case 'git output keeps non-ASCII paths under a code page 949 console' {
+    $korean = [string][char]0xD55C + [char]0xAE00
+    $repo = Join-Path $testRoot ("git utf8 $korean [safe]")
+    Invoke-HarnessProcess git @('init', '-q', $repo) | Out-Null
+    $value = Join-Path $repo ".githooks $korean"
+    Invoke-HarnessProcess git @('-C', $repo, 'config', 'core.hooksPath', $value) | Out-Null
+    $previous = [Console]::OutputEncoding
+    $legacy = $null
+    try { $legacy = [Text.Encoding]::GetEncoding(949) } catch { $legacy = $null }
+    try {
+        if ($null -ne $legacy -and (Test-HarnessIsWindows)) { [Console]::OutputEncoding = $legacy }
+        $read = (Invoke-HarnessProcess git @('-C', $repo, 'config', '--get', 'core.hooksPath')).Output.Trim()
+        Assert-True ($read -ceq $value) "git output was decoded with the console code page: $read"
+        Assert-True ([Console]::OutputEncoding.CodePage -eq $(if ($null -ne $legacy -and (Test-HarnessIsWindows)) { 949 } else { $previous.CodePage })) 'console encoding was not restored'
+    } finally { [Console]::OutputEncoding = $previous }
 }
 function Start-LockChild([string]$Name, [string]$Signal, [string]$StartSignal = '') {
     $info = New-Object Diagnostics.ProcessStartInfo
@@ -184,6 +204,22 @@ exit 1
             Assert-True ((Protect-HarnessSecretText $usage) -ceq $usage) 'usage counters were altered'
             Assert-True ((Protect-HarnessSecretText '{"model":"m","max_tokens":null}') -ceq '{"model":"m","max_tokens":null}') 'null setting was altered'
         } finally { $env:FIXTURE_SERVICE_TOKEN = $previousEnvSecret }
+    }
+    # Field finding F-24: a worker that read `tokenType: "Bearer"` in a requirements file
+    # produced a stream-json line whose masking dropped an escape and broke the JSON, so a
+    # successful provider run was judged a failure.
+    Test-Case 'masking keeps provider stream-json lines valid JSON' {
+        $text = "| POST | /api/auth/login | {accessToken, tokenType: `"Bearer`", expiresIn} |`r`npassword: `"fixture-escaped-secret`"`r`nDB_PASSWORD=fixture-plain-in-json, api_key='fixture-single-quoted'"
+        $event = [ordered]@{ type = 'user'; message = [ordered]@{ role = 'user'; content = @([ordered]@{ type = 'tool_result'; content = $text }) } }
+        $line = $event | ConvertTo-Json -Depth 8 -Compress
+        $masked = Protect-HarnessSecretText $line
+        $parsed = $null
+        try { $parsed = $masked | ConvertFrom-Json -ErrorAction Stop } catch { $parsed = $null }
+        Assert-True ($null -ne $parsed -and $parsed.type -eq 'user') "masking broke the JSON line: $masked"
+        foreach ($leak in @('fixture-escaped-secret', 'fixture-plain-in-json', 'fixture-single-quoted')) {
+            Assert-True (-not $masked.Contains($leak)) "secret survived masking: $masked"
+        }
+        Assert-True (([string]$parsed.message.content[0].content).Contains('/api/auth/login')) 'ordinary text was lost'
     }
     Test-Case 'git gate logs mask credentials printed by the gate command' {
         $logPath = Join-Path $testRoot 'gate-mask.log'

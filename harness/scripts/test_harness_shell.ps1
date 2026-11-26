@@ -1,5 +1,7 @@
 param([string]$OutputDirectory='', [switch]$BaselineOnly, [string]$CasePattern='*')
 $ErrorActionPreference='Stop'
+# Tests never send real notifications: drop the operator's notification secrets (F-26).
+foreach ($harnessNotifySecret in @('HARNESS_TELEGRAM_BOT_TOKEN', 'HARNESS_TELEGRAM_CHAT_ID', 'HARNESS_DISCORD_WEBHOOK_URL', 'HARNESS_NOTIFY_PROVIDER')) { [Environment]::SetEnvironmentVariable($harnessNotifySecret, $null, 'Process') }
 . (Join-Path $PSScriptRoot 'harness_common.ps1')
 $source=Split-Path -Parent $PSScriptRoot
 if(-not $OutputDirectory){$OutputDirectory=Join-Path $source '.test-output'}
@@ -10,7 +12,18 @@ function Case([string]$Kind,[string]$Name,[scriptblock]$Body){if($Name -notlike 
 if($CasePattern -ne '*'){Write-Output "Shell case filter: $CasePattern"}
 function ShellQuote([string]$Value){if(Test-HarnessIsWindows){return '"'+$Value+'"'};return "'"+$Value.Replace("'","'\''")+"'"}
 $git=(Get-Command git).Source
-$shell=if(Test-HarnessIsWindows){Join-Path (Split-Path -Parent (Split-Path -Parent $git)) 'bin/sh.exe'}else{(Get-Command sh).Source}
+function Find-GitBundledTool([string]$GitPath,[string]$Name){
+    # git.exe is cmd\git.exe from Windows PATH but mingw64\bin\git.exe inside Git Bash;
+    # walk up to the Git install root that has bin\<tool>.
+    $directory=Split-Path -Parent $GitPath
+    for($i=0;$i -lt 4 -and $directory;$i++){
+        $candidate=Join-Path $directory ('bin/'+$Name)
+        if(Test-Path -LiteralPath $candidate){return $candidate}
+        $directory=Split-Path -Parent $directory
+    }
+    return (Join-Path (Split-Path -Parent (Split-Path -Parent $GitPath)) ('bin/'+$Name))
+}
+$shell=if(Test-HarnessIsWindows){Find-GitBundledTool $git 'sh.exe'}else{(Get-Command sh).Source}
 if(-not(Test-Path -LiteralPath $shell)){throw 'Git POSIX shell required'}
 $node=(Get-Command node -ErrorAction Stop).Source
 $oldPath=$env:PATH;$oldPs=$env:CODEX_HARNESS_PWSH;$oldRoot=$env:CODEX_HARNESS_ROOT;$oldWorkspace=$env:CODEX_GIT_WORKSPACE_ROOT;$oldActive=$env:HARNESS_VALIDATION_ACTIVE

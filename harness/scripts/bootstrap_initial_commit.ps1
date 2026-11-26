@@ -29,6 +29,12 @@ if (-not $DryRun -and -not $Commit -and -not $RequestApproval -and -not $Push) {
 function Test-BootstrapGeneratedPath {
     param([string]$Path)
     $normalized = ($Path -replace "\\", "/").Trim('"')
+    # harness/reports/ holds runtime output but also engine templates that scripts
+    # read (report_template.md, retry_prompt_template.md). Those must be committed;
+    # excluding them leaves untracked files that make the bootstrap gate refuse.
+    if ($normalized -match "^harness/reports/[^/]*_template\.md$") {
+        return $false
+    }
     foreach ($pattern in @(
             "^harness/reports/",
             "^harness/state/",

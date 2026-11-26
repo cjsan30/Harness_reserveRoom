@@ -31,6 +31,7 @@ For the user-facing action list and command index, keep `harness/docs/user_actio
 pwsh -NoProfile -File harness/scripts/init_project_adapter.ps1 -ProjectName <name> -Language <language> -Framework <framework> -Force
 ```
 
+   The adapter merges missing harness rules into an existing `.gitignore`/`.gitattributes` (framework generators usually create them) instead of skipping the file. For Java/Kotlin it uses the checked-in Gradle or Maven wrapper with an explicit path (`.\gradlew.bat` on Windows, `./gradlew` elsewhere) and the `src/main/java`, `src/main/resources`, `src/test` layout.
 3. Review `harness/project/configs/project_profile.json`.
 4. Review the root docs and hygiene files seeded by the adapter:
    - `AGENT.md`

@@ -3,7 +3,7 @@
 ## Development Checkout
 
 This repository develops the reusable Harness engine. It has no active target project profile.
-Read docs/current_state.md first; consult docs/improvement_backlog.md and docs/feature_inventory.md as needed before planning changes.
+Consult docs/feature_inventory.md (including its implementation boundaries) and docs/improvement_backlog.md as needed before planning changes.
 Paths beginning with harness/ below describe the installed layout in a target repository.
 Do not treat the current checkout as configured for live dispatch or a passing full cycle.
 
@@ -128,7 +128,6 @@ When adding or changing user-visible workflow steps or commands, update `harness
 
 Start here depending on the task:
 
-- current development status: `docs/current_state.md`
 - current validation state: `reports/preflight_report.md`, `reports/latest_report.md`, `reports/test_results/`
 - project retargeting: `docs/PORTING.md`, `configs/project_profile.template.json`
 - implemented feature inventory: `docs/feature_inventory.md`
@@ -139,6 +138,7 @@ Start here depending on the task:
 ## Live Handoff
 
 - `run_retry_handoff.ps1` is the single entry point from retry prompt generation to dispatch and worker invocation
+- assignment branches start from `dev` when it exists; each passing assignment is promoted into `dev` before the next one starts, and its merged worktree/branch is removed unless `-KeepMergedAssignmentBranches` is set
 - `run_seed_handoff.ps1` is the single entry point from a manager-main seed plan to serial worker invocation, retry, and automatic promotion up to a main approval request
 - `invoke_assignment_codex.ps1` executes a claimed assignment through the configured Codex or Claude adapter; its filename is retained for compatibility
 - `invoke_pending_assignment_codex.ps1` selects the oldest pending assignment for an owner

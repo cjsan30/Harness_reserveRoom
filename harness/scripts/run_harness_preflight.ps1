@@ -181,6 +181,17 @@ if ($issues.Count -eq 0) {
         $docPath = Resolve-ProjectPath -RootDir $rootDir -ProjectPath $doc -Label ("requirements.source_docs: " + $doc)
         if (-not (Test-Path -LiteralPath $docPath)) {
             Add-Issue ("missing source doc: " + $doc)
+            continue
+        }
+
+        # Workers read these documents verbatim; leftover seed placeholders or
+        # unexpanded template variables become instructions to the model.
+        $docText = [IO.File]::ReadAllText($docPath)
+        if ($docText -match "replace-with-") {
+            Add-WarningEntry ("source doc still contains template placeholders (replace-with-...): " + $doc)
+        }
+        if ($docText -match '\$resolved[A-Za-z]+') {
+            Add-WarningEntry ("source doc contains an unexpanded template variable: " + $doc)
         }
     }
 

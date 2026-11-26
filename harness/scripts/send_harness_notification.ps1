@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$StatusFile = "",
     [string]$Message = "",
     [ValidateSet("", "telegram", "none")]
@@ -127,40 +127,29 @@ function Format-HarnessNotificationMessage {
     }
 
     if ($null -eq $Status) {
-        return "Harness notification"
+        return "[Harness] 알림"
     }
 
-    $failureType = if ($null -ne $Status.failure) { [string]$Status.failure.type } else { "none" }
-    $failureAction = if ($null -ne $Status.failure) { [string]$Status.failure.next_action } else { "none" }
-    $nextActions = if ($null -ne $Status.next_actions -and @($Status.next_actions).Count -gt 0) {
-        (@($Status.next_actions) | ForEach-Object { "- " + [string]$_ }) -join [Environment]::NewLine
-    } else {
-        "- none"
+    $statusText = switch ([string]$Status.status) {
+        'seed_failed' { '실행 실패' }
+        'cycle_failed' { '검증 사이클 실패' }
+        'preflight_failed' { '사전 점검 실패' }
+        'needs_user_input' { '사용자 입력 필요' }
+        'needs_profile' { '대상 프로필 없음' }
+        'needs_preflight' { '사전 점검 필요' }
+        'needs_baseline_commit' { '기준 커밋 필요' }
+        'needs_intake' { '요구사항 정리 필요' }
+        'seed_live_passed' { '실행 통과' }
+        default { "확인 필요 ($([string]$Status.status))" }
     }
-    $blocking = if ($null -ne $Status.blocking -and @($Status.blocking).Count -gt 0) {
-        (@($Status.blocking) | ForEach-Object { "- " + [string]$_ }) -join [Environment]::NewLine
-    } else {
-        "- none"
-    }
-
-    $messageText = @"
-[Harness] Attention Required
-
-status: $($Status.status)
-phase: $($Status.phase)
-user_action_required: $($Status.user_action_required)
-failure: $failureType
-
-blocking:
-$blocking
-
-next_actions:
-$nextActions
-
-failure_next_action: $failureAction
-next_command: $($Status.next_command)
-root: $rootDir
-"@
+    $reasonSource = ''
+    if ($null -ne $Status.failure -and -not [string]::IsNullOrWhiteSpace([string]$Status.failure.message)) { $reasonSource = [string]$Status.failure.message }
+    elseif ($null -ne $Status.blocking -and @($Status.blocking).Count -gt 0) { $reasonSource = [string]@($Status.blocking)[0] }
+    $lines = @("[Harness] $statusText", "프로젝트: $(Split-Path -Leaf $rootDir)")
+    if ($reasonSource) { $lines += "원인: $(ConvertTo-HarnessKoreanReason $reasonSource)" }
+    if ($Status.user_action_required -eq $true) { $lines += '사용자 조치: 필요' }
+    $lines += '다음: harness.ps1 status 또는 현황판에서 확인'
+    $messageText = $lines -join [Environment]::NewLine
 
     if ($messageText.Length -gt 3800) {
         return $messageText.Substring(0, 3800) + [Environment]::NewLine + "[truncated]"
@@ -193,10 +182,24 @@ function Append-NotificationLog {
     Append-Utf8File -Path $logPath -Content $entry
 }
 
-if (Test-Truthy -Value (Get-EnvValue -Name "HARNESS_NOTIFY_DISABLED")) {
-    if (-not $Quiet) {
-        Write-Output "notification skipped: disabled"
+# Status snapshots run often, so routine outcomes (no attention needed, duplicate) only
+# replace the last decision; outcomes an operator must act on are also logged.
+function Save-StatusNotificationDecision {
+    param([string]$Decision, [string]$Reason, [switch]$Log)
+    try {
+        $decisionDir = Get-HarnessConfiguredPath -RootDir $rootDir -Name "notification_state" -FallbackRelativePath "harness/state/notifications"
+        Ensure-HarnessDirectory -Path $decisionDir
+        $record = [pscustomobject]@{ decided_at = (Get-Date).ToString("o"); decision = $Decision; reason = (Protect-HarnessNotificationText $Reason) }
+        Write-Utf8File -Path (Join-Path $decisionDir "last_status_decision.json") -Content ($record | ConvertTo-Json -Depth 3)
+        if ($Log) { Append-NotificationLog -Status $Decision -Reason "status" -Signature "none" -Detail (Protect-HarnessNotificationText $Reason) }
+    } catch {
+        # Recording the decision never blocks the status snapshot.
     }
+    if (-not $Quiet) { Write-Output ("notification {0}: {1}" -f $Decision, $Reason) }
+}
+
+if (Test-Truthy -Value (Get-EnvValue -Name "HARNESS_NOTIFY_DISABLED")) {
+    Save-StatusNotificationDecision -Decision "skipped" -Reason "HARNESS_NOTIFY_DISABLED is set; unset it to send notifications" -Log
     exit 0
 }
 
@@ -211,15 +214,12 @@ if ([string]::IsNullOrWhiteSpace($resolvedProvider)) {
     }
 }
 if ([string]::IsNullOrWhiteSpace($resolvedProvider)) {
-    if (-not $Quiet) {
-        Write-Output "notification skipped: provider not configured"
-    }
+    $missingReason = Get-HarnessMissingSecretReason "telegram"
+    Save-StatusNotificationDecision -Decision "skipped" -Reason $(if ($missingReason) { "provider not configured: $missingReason" } else { "provider not configured" }) -Log
     exit 0
 }
 if ($resolvedProvider -eq "none") {
-    if (-not $Quiet) {
-        Write-Output "notification skipped: provider none"
-    }
+    Save-StatusNotificationDecision -Decision "skipped" -Reason "HARNESS_NOTIFY_PROVIDER is none"
     exit 0
 }
 if ($resolvedProvider -ne "telegram") {
@@ -243,18 +243,14 @@ try {
     }
 } catch {
     if ([string]::IsNullOrWhiteSpace($Message)) {
-        if (-not $Quiet) {
-            Write-Output ("notification skipped: cannot read status file: " + $_.Exception.Message)
-        }
+        Save-StatusNotificationDecision -Decision "skipped" -Reason ("cannot read status file: " + $_.Exception.Message) -Log
         exit 0
     }
 }
 
 $decision = Get-NotificationDecision -Status $statusObject -NotifyLevel $resolvedLevel -ForceNotify:$Force
 if (-not $decision.ShouldNotify) {
-    if (-not $Quiet) {
-        Write-Output "notification skipped: no matching attention condition"
-    }
+    Save-StatusNotificationDecision -Decision "skipped" -Reason "status needs no attention at level $resolvedLevel"
     exit 0
 }
 
@@ -277,9 +273,7 @@ if (-not $Force -and (Test-Path -LiteralPath $statePath)) {
     try {
         $lastState = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json
         if ([string]$lastState.signature -eq $signature) {
-            if (-not $Quiet) {
-                Write-Output "notification skipped: duplicate"
-            }
+            Save-StatusNotificationDecision -Decision "skipped" -Reason ("same status was already sent at " + [string]$lastState.notified_at)
             exit 0
         }
     } catch {
@@ -296,9 +290,7 @@ if ($DryRun) {
     $botToken = Get-EnvValue -Name "HARNESS_TELEGRAM_BOT_TOKEN"
     $chatId = Get-EnvValue -Name "HARNESS_TELEGRAM_CHAT_ID"
     if ([string]::IsNullOrWhiteSpace($botToken) -or [string]::IsNullOrWhiteSpace($chatId)) {
-        if (-not $Quiet) {
-            Write-Output "notification skipped: HARNESS_TELEGRAM_BOT_TOKEN or HARNESS_TELEGRAM_CHAT_ID is missing"
-        }
+        Save-StatusNotificationDecision -Decision "skipped" -Reason (Get-HarnessMissingSecretReason "telegram") -Log
         exit 0
     }
 
@@ -306,11 +298,14 @@ if ($DryRun) {
         chat_id = $chatId
         text = $messageText
     }
-    Invoke-RestMethod -Method Post -Uri ("https://api.telegram.org/bot" + $botToken + "/sendMessage") -Body $body | Out-Null
-    Append-NotificationLog -Status "sent" -Reason $decision.Reason -Signature $signature -Detail "telegram sendMessage"
-    if (-not $Quiet) {
-        Write-Output "notification sent: telegram"
+    try {
+        Invoke-RestMethod -Method Post -Uri ("https://api.telegram.org/bot" + $botToken + "/sendMessage") -Body $body -TimeoutSec 15 | Out-Null
+    } catch {
+        Save-StatusNotificationDecision -Decision "failed" -Reason (Get-HarnessNotificationFailureDetail "telegram" $_) -Log
+        exit 1
     }
+    Append-NotificationLog -Status "sent" -Reason $decision.Reason -Signature $signature -Detail "telegram sendMessage"
+    Save-StatusNotificationDecision -Decision "sent" -Reason "telegram sendMessage"
 }
 
 $stateObject = [pscustomobject]@{

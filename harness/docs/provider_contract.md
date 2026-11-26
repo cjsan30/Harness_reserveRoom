@@ -78,4 +78,4 @@ pwsh -NoProfile -File scripts/test_provider_contract.ps1
 pwsh -NoProfile -File scripts/harness.ps1 usage -Json
 ```
 
-이식 배치는 `harness/scripts/`를 사용합니다. 테스트 범주와 결과는 [provider 검증 기록](archive/verification_provider_2026-10-15.md)에 있습니다.
+이식 배치는 `harness/scripts/`를 사용합니다. 테스트 범주와 결과는 provider 검증 기록에 있습니다.

@@ -1,5 +1,7 @@
 param([string]$FixtureDirectory='', [string]$OutputDirectory='')
 $ErrorActionPreference='Stop'
+# Tests never send real notifications: drop the operator's notification secrets (F-26).
+foreach ($harnessNotifySecret in @('HARNESS_TELEGRAM_BOT_TOKEN', 'HARNESS_TELEGRAM_CHAT_ID', 'HARNESS_DISCORD_WEBHOOK_URL', 'HARNESS_NOTIFY_PROVIDER')) { [Environment]::SetEnvironmentVariable($harnessNotifySecret, $null, 'Process') }
 . (Join-Path $PSScriptRoot 'harness_common.ps1')
 $source=Split-Path -Parent $PSScriptRoot
 if(-not $OutputDirectory){$OutputDirectory=Join-Path $source '.test-output'}
@@ -15,7 +17,18 @@ function Read-Calls {return @([IO.File]::ReadAllLines((Join-Path $root 'tool_out
 function Save-Profile {Write-Utf8File $profilePath ($profile|ConvertTo-Json -Depth 20)}
 $runtime=Get-HarnessPowerShellExecutable
 $git=(Get-Command git).Source
-$bash=if(Test-HarnessIsWindows){Join-Path (Split-Path -Parent (Split-Path -Parent $git)) 'bin/bash.exe'}else{(Get-Command bash -ErrorAction Stop).Source}
+function Find-GitBundledTool([string]$GitPath,[string]$Name){
+    # git.exe is cmd\git.exe from Windows PATH but mingw64\bin\git.exe inside Git Bash;
+    # walk up to the Git install root that has bin\<tool>.
+    $directory=Split-Path -Parent $GitPath
+    for($i=0;$i -lt 4 -and $directory;$i++){
+        $candidate=Join-Path $directory ('bin/'+$Name)
+        if(Test-Path -LiteralPath $candidate){return $candidate}
+        $directory=Split-Path -Parent $directory
+    }
+    return (Join-Path (Split-Path -Parent (Split-Path -Parent $GitPath)) ('bin/'+$Name))
+}
+$bash=if(Test-HarnessIsWindows){Find-GitBundledTool $git 'bash.exe'}else{(Get-Command bash -ErrorAction Stop).Source}
 $routes=@('PowerShell','Bash');if(Test-HarnessIsWindows){$routes+= 'CMD'}
 $oldPath=$env:PATH;$oldPs=$env:CODEX_HARNESS_PWSH;$oldRoot=$env:CODEX_HARNESS_ROOT;$oldWorkspace=$env:CODEX_GIT_WORKSPACE_ROOT
 $oldCi=$env:HARNESS_CI_MODE;$oldNotify=$env:HARNESS_NOTIFY_DISABLED;$oldActive=$env:HARNESS_VALIDATION_ACTIVE

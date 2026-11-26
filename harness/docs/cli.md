@@ -64,7 +64,7 @@ pwsh -NoProfile -File scripts/harness.ps1 resume -PlanFile plans/seed.md -Json
 
 ## 검증
 
-`test_harness_cli.ps1`에 유닛·통합·보안 범주를 명시한 회귀가 있으며 전체 `test_harness.ps1`에도 포함됩니다. 실제 init/status/preflight와 fake seed backend를 사용하고 AI나 원격 서비스를 호출하지 않습니다. 상세는 [CLI 검증 기록](archive/verification_cli_2026-10-15.md)을 참고하세요.
+`test_harness_cli.ps1`에 유닛·통합·보안 범주를 명시한 회귀가 있으며 전체 `test_harness.ps1`에도 포함됩니다. 실제 init/status/preflight와 fake seed backend를 사용하고 AI나 원격 서비스를 호출하지 않습니다. 상세는 CLI 검증 기록을 참고하세요.
 # Dashboard extension (2026-10-15)
 
 `harness.ps1 dashboard` starts a read-only loopback web monitor (Python 3.9+).

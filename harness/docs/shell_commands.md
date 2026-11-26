@@ -1,6 +1,6 @@
 # Shell 명령 계약과 전환
 
-2026-10-15 여덟 번째 구현. 개별 검증·전체 사이클·retry의 6개 shell 진입점을 같은 PowerShell 엔진에 연결했습니다. 변경 근거는 [검증 기록](archive/verification_shell_2026-10-15.md)에 있습니다.
+2026-10-15 여덟 번째 구현. 개별 검증·전체 사이클·retry의 6개 shell 진입점을 같은 PowerShell 엔진에 연결했습니다. 변경 근거는 검증 기록에 있습니다.
 
 ## 호출과 옵션
 
@@ -36,6 +36,8 @@ OS와 호출 shell의 종료 상태 표현 범위는 그대로 적용됩니다. 
 
 독립 배치는 `project/configs/project_profile.json`, 이식 배치는 `harness/project/configs/project_profile.json`의 `commands.build/unit/integration/benchmark_smoke`를 사용합니다. 프로필이 없거나 명령이 비어 있거나 템플릿/객체이면 실패합니다. 성공만 출력하는 no-op 및 알려진 실패 은폐 구문도 거부합니다.
 
+Windows의 프로필 명령은 `cmd.exe`로 실행됩니다. 상속된 환경에 `NoDefaultCurrentDirectoryInExePath=1`이 있으면 `cmd`는 현재 폴더의 실행 파일을 경로 없이 찾지 않으므로, 저장소 안의 wrapper는 `.\gradlew.bat`, `.\mvnw.cmd`처럼 경로를 명시하세요. adapter의 Java 프리셋은 wrapper가 있으면 이 형식으로 생성합니다.
+
 make 사용자는 `make build`, `make unit` 등의 실제 명령을 프로필에 명시하세요. 기본 make fallback은 제거했습니다. bare `make`로 시작할 때는 실행 가능한 `make`, 이어 `mingw32-make`를 찾아 절대 경로로 고정합니다.
 
 `CODEX_HARNESS_ROOT`와 `CODEX_GIT_WORKSPACE_ROOT`가 설정되어 있다면 호출한 엔트리의 설치 프로젝트와 같아야 합니다. 다른 저장소를 가리키는 상속 환경은 실행 전에 거부합니다. 의도한 worktree 안에 설치된 엔트리와 그 경로에 맞는 환경을 사용하세요. 공유 엔진을 다른 프로젝트로 조용히 재지정하지 않습니다.
@@ -48,7 +50,7 @@ make 사용자는 `make build`, `make unit` 등의 실제 명령을 프로필에
 - Windows Git shell → PowerShell → cmd.exe 경로에서 한글·공백·대괄호·`&` 경로, 따옴표로 감싼 공백·`&`·`|` 인자, 절대 실행 파일 경로를 검사합니다. MSYS 중복 인수 변환을 bridge 프로세스에서 차단합니다.
 - Windows 명령 문자열은 cmd.exe, POSIX는 기존 bash/sh 규칙을 따릅니다. 모든 OS에서 같은 문자열이 동일한 뜻이라는 보장은 없습니다. 구조화된 executable/argv 형식으로 바꾼 것은 아닙니다.
 - 프로필 명령은 신뢰하는 프로젝트 코드입니다. 임의 명령 문자열을 안전하게 만드는 보안 필터나 OS sandbox를 제공하지 않습니다.
-- WSL에서는 native pwsh를 요구하고 명시적인 Windows `.exe` 런타임을 거부합니다. WSL2 Ubuntu 24.04의 native PowerShell/Bash 및 Windows 직접 호출·CMD·Git Bash는 [플랫폼별 검증](archive/verification_platforms_2026-10-15.md)에 실제 결과를 남겼습니다. 원격 CI·별도 Linux 서버/배포판까지 포함한 검증은 아닙니다.
+- WSL에서는 native pwsh를 요구하고 명시적인 Windows `.exe` 런타임을 거부합니다. WSL2 Ubuntu 24.04의 native PowerShell/Bash 및 Windows 직접 호출·CMD·Git Bash는 플랫폼별 검증에 실제 결과를 남겼습니다. 원격 CI·별도 Linux 서버/배포판까지 포함한 검증은 아닙니다.
 - `smoke_*.sh`, 설치·hook 등 다른 shell 유틸리티 전체를 이 bridge로 전환한 것은 아닙니다. 실행 중 timeout과 실시간 스트리밍도 후속 과제입니다.
 
 ## 자체 회귀

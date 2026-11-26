@@ -29,7 +29,41 @@ function Test-HarnessRedactableValue([string]$Value) {
     return $true
 }
 
+function ConvertTo-HarnessMaskedJsonValue($Value) {
+    if ($Value -is [string]) { return (Protect-HarnessSecretText $Value) }
+    if ($Value -is [System.Management.Automation.PSCustomObject]) {
+        foreach ($property in @($Value.PSObject.Properties)) { $property.Value = ConvertTo-HarnessMaskedJsonValue $property.Value }
+        return $Value
+    }
+    if ($Value -is [System.Collections.IList]) {
+        $items = New-Object 'System.Collections.Generic.List[object]'
+        foreach ($item in $Value) { $items.Add((ConvertTo-HarnessMaskedJsonValue $item)) | Out-Null }
+        return ,($items.ToArray())
+    }
+    return $Value
+}
+
+function Test-HarnessJsonText([string]$Text) {
+    $trimmed = $Text.Trim()
+    if (-not ($trimmed.StartsWith('{') -or $trimmed.StartsWith('['))) { return $false }
+    try { $null = $trimmed | ConvertFrom-Json -ErrorAction Stop; return $true } catch { return $false }
+}
+
 function Protect-HarnessSecretText {
+    param([AllowNull()][string]$Text)
+
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    $result = Protect-HarnessSecretTextCore $Text
+    # Provider logs are JSON lines and the harness reads them back (F-24). Text masking
+    # must never make a valid JSON line invalid: mask the decoded string values instead.
+    if ($result -cne $Text -and (Test-HarnessJsonText $Text) -and -not (Test-HarnessJsonText $result)) {
+        $parsed = $Text | ConvertFrom-Json -ErrorAction Stop
+        $result = (ConvertTo-HarnessMaskedJsonValue $parsed) | ConvertTo-Json -Depth 100 -Compress
+    }
+    return $result
+}
+
+function Protect-HarnessSecretTextCore {
     param([AllowNull()][string]$Text)
 
     if ([string]::IsNullOrEmpty($Text)) { return $Text }
@@ -78,7 +112,8 @@ function Protect-HarnessSecretText {
         })
 
     # Assignments: API_KEY=value, password: value, --token value is left to the patterns above.
-    $result = [regex]::Replace($result, '(?i)(?<![\w"])(' + $script:HarnessSensitiveKeyPattern + ')(\s*[:=]\s*)(["'']?)([^\s"'',;]+)', {
+    # A quote may be JSON-escaped (\"value\") when the text sits inside a JSON string.
+    $result = [regex]::Replace($result, '(?i)(?<![\w"])(' + $script:HarnessSensitiveKeyPattern + ')(\s*[:=]\s*)(\\?["'']?)([^\s"'',;\\]+)', {
             param($match)
             if (-not (Test-HarnessRedactableValue $match.Groups[4].Value)) { return $match.Value }
             return $match.Groups[1].Value + $match.Groups[2].Value + $match.Groups[3].Value + $marker

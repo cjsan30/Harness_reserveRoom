@@ -32,7 +32,7 @@ See [shell contract](../docs/shell_commands.md) for environment boundaries, runt
 
 This repository currently has no active target project profile or configured application commands.
 Commands below use the installed target-root/harness layout. The make commands are examples, not this repository's build commands.
-For the complete implemented script inventory, see `../docs/feature_inventory.md`; for readiness, see `../docs/current_state.md`.
+For the complete implemented script inventory and implementation boundaries, see `../docs/feature_inventory.md`.
 From this checkout, `pwsh -NoProfile -File scripts/init_project_adapter.ps1 -ListPresets` lists supported presets without configuring a target.
 
 User-facing workflow steps and command usage are summarized in `harness/docs/user_actions_and_commands.md`. Keep both files updated when adding, removing, or changing commands.
@@ -85,6 +85,8 @@ worker exit requirements and snapshot scope. In a standalone target omit `harnes
 - reconcile a confirmed worker exit and its completion record
   - `pwsh -NoProfile -File harness/scripts/repair_assignment_state.ps1 -Agent <owner> -AssignmentId <id>`
   - unconfirmed exits remain blocked; this command does not kill processes or force requeue
+- operator decision: a confirmed-exit pass record that cannot be bound to execution evidence (e.g. the provider result is failed) becomes a failure so resume can retry it; never a pass
+  - `pwsh -NoProfile -File harness/scripts/repair_assignment_state.ps1 -Agent <owner> -AssignmentId <id> -MarkFailed -Reason "<why>"`
 - Linux/macOS setup
   - `sh harness/scripts/setup_portable_runtime.sh`
 - portable platform smoke
@@ -281,4 +283,13 @@ worker exit requirements and snapshot scope. In a standalone target omit `harnes
 - Standalone: `pwsh -NoProfile -File scripts/get_execution_usage.ps1 [-Json]`
 - Installed: `pwsh -NoProfile -File harness/scripts/get_execution_usage.ps1 [-Json]`
 - Optional `execution_policy` in the active profile controls launch count, assignment attempts, concurrency and subsequent-launch token/time thresholds. See `docs/execution_usage.md`; no provider quota or monetary amount is inferred.
+- `max_attempts_per_assignment` counts only attempts classified as implementation failures (2026-10-28). Show or extend one assignment's attempts:
+  - `pwsh -NoProfile -File harness/scripts/harness.ps1 attempts -AssignmentId <id> [-Json]`
+  - `pwsh -NoProfile -File harness/scripts/harness.ps1 attempts -AssignmentId <id> -Grant 1 -Reason "<text>"`
+- Environment requirements and operator-declared repairs live in the profile `environment` section; decide them before a paid run. Every requirement (and the harness's own git and provider CLI) is first checked for being installed; a missing tool stops with its `install_hint` and is never installed or repaired:
+  - `pwsh -NoProfile -File harness/scripts/harness.ps1 env [-Repair] [-Json]`
+- Run-stop and budget notifications (Telegram, Discord webhook). Secrets stay in environment variables; settings are local state:
+  - `pwsh -NoProfile -File harness/scripts/harness.ps1 notify [-Telegram on|off] [-Discord on|off] [-OnStop|-OnBudget|-OnCompletion on|off] [-QuietHours on|off -QuietStart HH:mm -QuietEnd HH:mm] [-ReminderMinutes n -ReminderCount n -WaitHours n] [-Test] [-Check] [-Json]`
+  - `-Check` explains why messages would not arrive: kill switch, capture mode, enabled channels and events, missing secrets (including variables saved for the user but not visible to the running process), a live Telegram `getMe`/`getChat` check that sends nothing, the last three log entries, and the last status-notification decision.
+  - Every notification attempt is logged in `harness/reports/notifications_log.md`, including `skipped` with its reason and `failed` with the likely cause (wrong token, unknown chat or `/start` missing, blocked bot, rate limit, network). Status snapshots also keep `harness/state/notifications/last_status_decision.json`.
 

@@ -857,8 +857,11 @@ function Get-GitAssignmentBaseBranch {
         [string]$RootDir
     )
 
+    # Serial plans promote each passing assignment into dev, so the next assignment
+    # must start from dev to see earlier work. Before the first promotion dev does
+    # not exist yet and main (or the bootstrap branch) is the baseline.
     $config = Get-GitWorkflowConfig -RootDir $RootDir
-    foreach ($candidate in @($config.MainBranch, $config.BootstrapBranch)) {
+    foreach ($candidate in @($config.DevBranch, $config.MainBranch, $config.BootstrapBranch)) {
         if ([string]::IsNullOrWhiteSpace($candidate)) {
             continue
         }
@@ -869,7 +872,7 @@ function Get-GitAssignmentBaseBranch {
         }
     }
 
-    throw "cannot create an assignment branch because neither '$($config.MainBranch)' nor '$($config.BootstrapBranch)' exists locally"
+    throw "cannot create an assignment branch because none of '$($config.DevBranch)', '$($config.MainBranch)', '$($config.BootstrapBranch)' exists locally"
 }
 
 function Ensure-GitAssignmentBranch {

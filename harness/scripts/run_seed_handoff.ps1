@@ -1,3 +1,5 @@
+# Unknown options must fail: a mistyped switch (for example -Preview) would otherwise start a paid run.
+[CmdletBinding()]
 param(
     [switch]$Ephemeral,
     [string]$Model,
@@ -8,6 +10,7 @@ param(
     [int]$StaleAfterSeconds = 7200,
     [switch]$StopOnWorkerFailure,
     [switch]$SkipAutoAdvanceGit,
+    [switch]$KeepMergedAssignmentBranches,
     [string]$PlanFile
 )
 
@@ -63,6 +66,9 @@ if ($StopOnWorkerFailure) {
 }
 if ($SkipAutoAdvanceGit) {
     $dispatchArgs += "-SkipAutoAdvanceGit"
+}
+if ($KeepMergedAssignmentBranches) {
+    $dispatchArgs += "-KeepMergedAssignmentBranches"
 }
 if (-not [string]::IsNullOrWhiteSpace($PlanFile)) {
     $dispatchArgs += @("-PlanFile", $PlanFile)
